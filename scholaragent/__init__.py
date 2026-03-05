@@ -1,5 +1,7 @@
 """ScholarAgent - Multi-agent scientific literature research system."""
 
+__version__ = "0.2.0"
+
 from scholaragent.clients.router import ModelConfig, ModelRouter
 from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.dispatcher import Dispatcher
