@@ -65,6 +65,7 @@ class SpecialistAgent(ABC):
         # globals, bypassing the reserved-name check in LocalREPL.__init__.
         if agent_call_fn is not None:
             repl.globals["call_agent"] = agent_call_fn
+            repl._call_agent = agent_call_fn  # so _restore_scaffold preserves it
 
         repl.load_context(task)
 

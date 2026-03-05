@@ -17,14 +17,18 @@ def find_code_blocks(text: str) -> list[CodeBlock]:
 
 
 def find_final_answer(text: str) -> str | None:
-    """Extract FINAL(...) answer from LLM response.
+    """Extract FINAL(...) answer from LLM response prose (outside code blocks).
 
     Looks for FINAL(answer text here) -- NOT FINAL_VAR (that's handled by REPL).
+    Only matches FINAL() that appears outside ```...``` code blocks so that
+    code like ``FINAL(variable)`` inside a repl block is left to the REPL.
     Returns the answer text or None if no FINAL() found.
     """
+    # Strip all fenced code blocks first so we only match prose usage
+    prose = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
     # Match FINAL(...) but not FINAL_VAR(...)
     pattern = r"FINAL\((?!VAR)(.*?)\)"
-    match = re.search(pattern, text, re.DOTALL)
+    match = re.search(pattern, prose, re.DOTALL)
     if match:
         return match.group(1).strip()
     return None

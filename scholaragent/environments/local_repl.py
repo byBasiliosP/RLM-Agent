@@ -174,6 +174,7 @@ class LocalREPL(BaseEnv):
         self._last_final_answer: str | None = None
 
         # Inject scaffold functions into globals
+        self.globals["FINAL"] = self._final_var  # alias — LLMs often use FINAL() instead of FINAL_VAR()
         self.globals["FINAL_VAR"] = self._final_var
         self.globals["SHOW_VARS"] = self._show_vars
         self.globals["SHOW_PROGRESS"] = self._show_progress
@@ -321,8 +322,8 @@ class LocalREPL(BaseEnv):
                 self.globals["llm_query"] = self._llm_query
             elif name == "call_agent":
                 self.globals["call_agent"] = self._call_agent
-            elif name == "FINAL_VAR":
-                self.globals["FINAL_VAR"] = self._final_var
+            elif name in ("FINAL", "FINAL_VAR"):
+                self.globals[name] = self._final_var
             elif name == "SHOW_VARS":
                 self.globals["SHOW_VARS"] = self._show_vars
             elif name == "SHOW_PROGRESS":

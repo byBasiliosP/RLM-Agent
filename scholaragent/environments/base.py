@@ -18,6 +18,7 @@ RESERVED_NAMES: frozenset[str] = frozenset(
     {
         "llm_query",
         "call_agent",
+        "FINAL",
         "FINAL_VAR",
         "SHOW_VARS",
         "SHOW_PROGRESS",
