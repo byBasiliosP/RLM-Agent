@@ -1,12 +1,10 @@
 {
   "mcpServers": {
     "scholar-memory": {
-      "command": "python",
-      "args": ["-m", "scholaragent.mcp_server"],
+      "command": "/path/to/scholaragent/.venv/bin/scholaragent-server",
       "env": {
         "OPENAI_API_KEY": "your-openai-key-here",
-        "ANTHROPIC_API_KEY": "your-anthropic-key-here",
-        "GITHUB_TOKEN": "optional-github-token"
+        "ANTHROPIC_API_KEY": "your-anthropic-key-here"
       }
     }
   }
