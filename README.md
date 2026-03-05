@@ -1,0 +1,224 @@
+# ScholarAgent
+
+A multi-agent scientific research system that searches, analyzes, and synthesizes academic literature — then serves what it learns as persistent memory to your coding agent via MCP.
+
+## Quick Start
+
+```bash
+git clone https://github.com/byBasiliosP/RLM-Agent.git
+cd RLM-Agent
+
+# Set your API keys
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Install and register in your coding agent
+./install.sh
+```
+
+That's it. Restart your coding agent (Claude Code, Cursor, Windsurf, VS Code) and you'll have 5 new tools available.
+
+## What It Does
+
+ScholarAgent runs a pipeline of 5 specialist AI agents that collaborate on research tasks:
+
+```
+Your Query
+    |
+    v
+ Dispatcher (orchestrator)
+    |
+    v
+ Scout -----> Reader -----> Critic -----> Analyst -----> Synthesizer
+ (find        (extract      (evaluate     (compare       (write
+  papers)      findings)     rigor)        across)        review)
+    |
+    v
+ Memory Store (SQLite + embeddings)
+    |
+    v
+ MCP Server (5 tools for your coding agent)
+```
+
+Papers are found on **arXiv** and **Semantic Scholar**. Code examples come from **GitHub**. Documentation comes from the web. Everything gets indexed with embeddings for fast semantic search.
+
+## MCP Tools
+
+Once installed, your coding agent gets these tools:
+
+| Tool | What It Does | Speed |
+|------|-------------|-------|
+| `memory_lookup` | Semantic search over everything ScholarAgent has ever found | ~100ms |
+| `memory_research` | Run new research — searches papers, docs, code and indexes results | 5s - 5min |
+| `memory_store` | Manually save a finding, snippet, or insight for later | instant |
+| `memory_forget` | Remove stale entries by ID or semantic query | instant |
+| `memory_status` | Check what's in memory (counts, sources, history) | instant |
+
+### Research Depth Levels
+
+`memory_research` supports three depth levels:
+
+- **`quick`** — Search only, index raw results (~5-10s)
+- **`normal`** — Search + agent analysis (~30-60s)
+- **`deep`** — Full 5-agent pipeline with synthesis (~2-5min)
+
+### Focus Modes
+
+Shape what the research emphasizes:
+
+- **`implementation`** — Code examples, API usage, how-to guides
+- **`theory`** — Concepts, algorithms, mathematical foundations
+- **`comparison`** — Alternatives, benchmarks, pros/cons
+
+## Architecture
+
+### Agents
+
+Each agent runs an **RLM loop** (Reasoning via Language Models): generate Python code, execute in a sandboxed REPL, check for a final answer, iterate.
+
+| Agent | Role | Tools |
+|-------|------|-------|
+| **Scout** | Finds relevant papers | arXiv search, Semantic Scholar search, citation/reference graphs |
+| **Reader** | Extracts key findings | Paper metadata and abstract analysis |
+| **Critic** | Evaluates methodology | Scores rigor and relevance (0-1), identifies limitations |
+| **Analyst** | Compares across papers | Identifies themes, contradictions, research gaps |
+| **Synthesizer** | Writes the review | Produces structured markdown with citations |
+
+### Multi-LLM Routing
+
+The Scout agent uses a cheap/fast model (e.g. `gpt-4o-mini`) since it just searches. All other agents use a strong model (e.g. `claude-sonnet-4-6`) for analytical work.
+
+### Memory Layer
+
+- **SQLite** database at `~/.scholaragent/memory.db`
+- **OpenAI embeddings** (`text-embedding-3-small`) for semantic search — swappable via ABC
+- **Deduplication** — won't re-research the same query within 7 days
+- **Access tracking** — entries track how often they're retrieved
+
+### Source Types
+
+| Source | Adapter | API |
+|--------|---------|-----|
+| Papers | `tools/arxiv.py`, `tools/semantic_scholar.py` | arXiv XML, S2 REST |
+| Code | `sources/github.py` | GitHub Search (needs `GITHUB_TOKEN`) |
+| Docs | `sources/docs.py` | Any URL (HTML-to-text extraction) |
+
+## Python API
+
+Use ScholarAgent directly from Python:
+
+```python
+from scholaragent import ScholarAgent
+
+agent = ScholarAgent(
+    strong_model={"backend": "anthropic", "model_name": "claude-sonnet-4-6"},
+    cheap_model={"backend": "openai", "model_name": "gpt-4o-mini"},
+    max_papers=10,
+    max_iterations=15,
+    verbose=True,
+)
+
+result = agent.research("What are the latest advances in RLHF?")
+print(result.result)  # Markdown literature review
+```
+
+## Installation
+
+### One-Command Install
+
+```bash
+./install.sh
+```
+
+This will:
+
+1. Check for Python 3.12+
+2. Create a virtual environment at `.venv/`
+3. Install the package (editable mode)
+4. Validate that `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are set
+5. Auto-detect and register the MCP server in:
+   - Claude Code (`~/.claude/settings.json`)
+   - Cursor (`~/.cursor/mcp.json`)
+   - Windsurf (`~/.windsurf/mcp.json`)
+   - VS Code (`~/.vscode/mcp.json`)
+
+### Manual Install
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+Then add to your agent's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "scholar-memory": {
+      "command": "/path/to/RLM-Agent/.venv/bin/scholaragent-server",
+      "env": {
+        "OPENAI_API_KEY": "your-key",
+        "ANTHROPIC_API_KEY": "your-key"
+      }
+    }
+  }
+}
+```
+
+### Uninstall
+
+```bash
+./install.sh --uninstall
+```
+
+Removes the MCP server entry from all detected agent configs.
+
+## Environment Variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `OPENAI_API_KEY` | Yes | Embeddings + cheap model routing |
+| `ANTHROPIC_API_KEY` | Yes | Strong model for analysis agents |
+| `GITHUB_TOKEN` | No | GitHub code search (higher rate limits) |
+
+## Project Structure
+
+```
+scholaragent/
+  agents/          # 5 specialist agents (scout, reader, critic, analyst, synthesizer)
+  core/            # Orchestration (dispatcher, registry, handler, REPL, comms)
+  clients/         # LLM clients (OpenAI, Anthropic) + model router
+  memory/          # Persistent store (SQLite, embeddings, research pipeline)
+  sources/         # Source adapters (GitHub code, documentation)
+  tools/           # Search tools (arXiv, Semantic Scholar)
+  environments/    # Sandboxed Python REPL
+  utils/           # Parsing, prompts, budget tracking
+  mcp_server.py    # FastMCP server (5 tools)
+tests/             # 246 tests
+examples/          # Usage examples
+install.sh         # One-command installer
+```
+
+## Development
+
+```bash
+# Install with dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+python -m pytest tests/ -v
+
+# Run a specific test file
+python -m pytest tests/test_store.py -v
+```
+
+## Built On
+
+- [RLM](https://github.com/alexzhang13/rlm) — REPL-driven LM orchestration patterns
+- [MCP](https://modelcontextprotocol.io) — Model Context Protocol for agent interoperability
+- [FastMCP](https://github.com/jlowin/fastmcp) — Python MCP server framework
+
+## License
+
+MIT
