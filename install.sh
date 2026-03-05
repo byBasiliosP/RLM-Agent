@@ -22,13 +22,14 @@ ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 
-# --- Agent config paths ---
+# --- Agent config paths (parallel arrays for Bash 3.2 compat) ---
 
-declare -A AGENT_CONFIGS=(
-    ["Claude Code"]="${HOME}/.claude/settings.json"
-    ["Cursor"]="${HOME}/.cursor/mcp.json"
-    ["Windsurf"]="${HOME}/.windsurf/mcp.json"
-    ["VS Code"]="${HOME}/.vscode/mcp.json"
+AGENT_NAMES=("Claude Code" "Cursor" "Windsurf" "VS Code")
+AGENT_PATHS=(
+    "${HOME}/.claude/settings.json"
+    "${HOME}/.cursor/mcp.json"
+    "${HOME}/.windsurf/mcp.json"
+    "${HOME}/.vscode/mcp.json"
 )
 
 # --- JSON helpers (use Python to avoid jq dependency) ---
@@ -108,8 +109,9 @@ do_uninstall() {
     echo
 
     local found=0
-    for agent in "${!AGENT_CONFIGS[@]}"; do
-        local config_path="${AGENT_CONFIGS[$agent]}"
+    for i in "${!AGENT_NAMES[@]}"; do
+        local agent="${AGENT_NAMES[$i]}"
+        local config_path="${AGENT_PATHS[$i]}"
         if [[ -f "$config_path" ]]; then
             info "Checking ${agent}..."
             _json_remove_mcp "$config_path"
@@ -216,8 +218,9 @@ do_install() {
     info "Registering MCP server in coding agents..."
 
     local registered=0
-    for agent in "${!AGENT_CONFIGS[@]}"; do
-        local config_path="${AGENT_CONFIGS[$agent]}"
+    for i in "${!AGENT_NAMES[@]}"; do
+        local agent="${AGENT_NAMES[$i]}"
+        local config_path="${AGENT_PATHS[$i]}"
         local config_dir
         config_dir="$(dirname "$config_path")"
 
