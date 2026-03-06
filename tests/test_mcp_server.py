@@ -1,5 +1,6 @@
 """Tests for the MCP server tool definitions."""
 
+import json
 import os
 
 import pytest
@@ -18,11 +19,28 @@ class TestMCPToolFunctions:
         with patch.dict(os.environ, {"SCHOLAR_MEMORY_DB": self.db_path}):
             yield
 
-    def test_memory_store_creates_entry(self):
-        from scholaragent.mcp_server import _get_store, _memory_store
+    def _make_store(self):
         from scholaragent.memory.store import MemoryStore
 
-        store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
+        return MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
+
+    def _make_entry(self, content="Test content", source_type="paper", source_ref="ref1"):
+        from scholaragent.memory.types import MemoryEntry
+
+        return MemoryEntry(
+            content=content,
+            summary=content[:200],
+            source_type=source_type,
+            source_ref=source_ref,
+            tags=["test"],
+        )
+
+    # ---- memory_store ----
+
+    def test_memory_store_creates_entry(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
         result = _memory_store(
             store=store,
             content="RLHF uses human feedback",
@@ -32,57 +50,335 @@ class TestMCPToolFunctions:
         assert result["status"] == "stored"
         assert store.count() == 1
 
+    def test_memory_store_infers_paper_from_arxiv(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(store=store, content="Test", source="arxiv:1234", tags=[])
+        assert result["source_type"] == "paper"
+
+    def test_memory_store_infers_paper_from_s2(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(store=store, content="Test", source="s2:abc123", tags=[])
+        assert result["source_type"] == "paper"
+
+    def test_memory_store_infers_code_from_github_prefix(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(store=store, content="Test", source="github:org/repo", tags=[])
+        assert result["source_type"] == "code"
+
+    def test_memory_store_infers_code_from_github_url(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(
+            store=store, content="Test", source="https://github.com/org/repo", tags=[]
+        )
+        assert result["source_type"] == "code"
+
+    def test_memory_store_defaults_to_docs(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(
+            store=store, content="Test", source="https://docs.python.org/3/", tags=[]
+        )
+        assert result["source_type"] == "docs"
+
+    def test_memory_store_returns_entry_id(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(store=store, content="Test", source="ref", tags=[])
+        assert "id" in result
+        assert len(result["id"]) > 0
+
+    def test_memory_store_rejects_empty_content(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(store=store, content="", source="ref", tags=[])
+        assert "error" in result
+
+    def test_memory_store_rejects_whitespace_content(self):
+        from scholaragent.mcp_server import _memory_store
+
+        store = self._make_store()
+        result = _memory_store(store=store, content="   \n\t  ", source="ref", tags=[])
+        assert "error" in result
+
+    # ---- memory_lookup ----
+
     def test_memory_lookup_returns_results(self):
         from scholaragent.mcp_server import _memory_lookup
-        from scholaragent.memory.store import MemoryStore
-        from scholaragent.memory.types import MemoryEntry
 
-        store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
-        store.add(MemoryEntry(
-            content="Transformers use attention",
-            summary="Attention",
-            source_type="paper",
-            source_ref="ref1",
-            tags=["transformers"],
-        ))
+        store = self._make_store()
+        store.add(self._make_entry("Transformers use attention"))
         result = _memory_lookup(store=store, query="attention mechanisms")
         assert "results" in result
         assert len(result["results"]) > 0
 
     def test_memory_lookup_empty_store(self):
         from scholaragent.mcp_server import _memory_lookup
-        from scholaragent.memory.store import MemoryStore
 
-        store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
+        store = self._make_store()
         result = _memory_lookup(store=store, query="anything")
         assert result["results"] == []
 
+    def test_memory_lookup_includes_total_indexed(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        store.add(self._make_entry("Entry 1"))
+        store.add(self._make_entry("Entry 2", source_ref="ref2"))
+        result = _memory_lookup(store=store, query="entry")
+        assert result["total_indexed"] == 2
+
+    def test_memory_lookup_includes_query_echo(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        result = _memory_lookup(store=store, query="my search query")
+        assert result["query"] == "my search query"
+
+    def test_memory_lookup_includes_relevance_scores(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        store.add(self._make_entry("Machine learning algorithms"))
+        result = _memory_lookup(store=store, query="machine learning")
+        assert "relevance_score" in result["results"][0]
+        assert isinstance(result["results"][0]["relevance_score"], float)
+
+    def test_memory_lookup_respects_max_results(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        for i in range(10):
+            store.add(self._make_entry(f"Entry number {i}", source_ref=f"ref{i}"))
+        result = _memory_lookup(store=store, query="entry", max_results=3)
+        assert len(result["results"]) <= 3
+
+    def test_memory_lookup_filters_by_source(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        store.add(self._make_entry("Paper about RLHF", source_type="paper", source_ref="ref1"))
+        store.add(self._make_entry("Code for RLHF", source_type="code", source_ref="ref2"))
+        result = _memory_lookup(store=store, query="RLHF", sources=["paper"])
+        for r in result["results"]:
+            assert r["source_type"] == "paper"
+
+    def test_memory_lookup_rejects_max_results_zero(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        result = _memory_lookup(store=store, query="test", max_results=0)
+        assert "error" in result
+
+    def test_memory_lookup_rejects_max_results_negative(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        result = _memory_lookup(store=store, query="test", max_results=-1)
+        assert "error" in result
+
+    def test_memory_lookup_rejects_max_results_over_50(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        result = _memory_lookup(store=store, query="test", max_results=51)
+        assert "error" in result
+
+    def test_memory_lookup_accepts_max_results_boundary(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        result1 = _memory_lookup(store=store, query="test", max_results=1)
+        assert "error" not in result1
+        result50 = _memory_lookup(store=store, query="test", max_results=50)
+        assert "error" not in result50
+
+    # ---- memory_forget ----
+
     def test_memory_forget_by_id(self):
         from scholaragent.mcp_server import _memory_forget
-        from scholaragent.memory.store import MemoryStore
-        from scholaragent.memory.types import MemoryEntry
 
-        store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
-        entry = MemoryEntry(
-            content="Delete me",
-            summary="Del",
-            source_type="paper",
-            source_ref="ref",
-            tags=[],
-        )
+        store = self._make_store()
+        entry = self._make_entry("Delete me")
         store.add(entry)
         result = _memory_forget(store=store, query_or_id=entry.id)
         assert result["deleted"] == 1
         assert store.count() == 0
 
-    def test_memory_status(self):
+    def test_memory_forget_returns_zero_for_missing_id(self):
+        from scholaragent.mcp_server import _memory_forget
+
+        store = self._make_store()
+        result = _memory_forget(store=store, query_or_id="nonexistent-uuid")
+        assert result["deleted"] == 0
+
+    def test_memory_forget_echoes_query(self):
+        from scholaragent.mcp_server import _memory_forget
+
+        store = self._make_store()
+        result = _memory_forget(store=store, query_or_id="test-query")
+        assert result["query_or_id"] == "test-query"
+
+    # ---- memory_status ----
+
+    def test_memory_status_empty(self):
         from scholaragent.mcp_server import _memory_status
+
+        store = self._make_store()
+        result = _memory_status(store=store)
+        assert result["total_entries"] == 0
+        assert result["entries_by_source"] == {}
+        assert result["research_queries_logged"] == 0
+
+    def test_memory_status_with_entries(self):
+        from scholaragent.mcp_server import _memory_status
+
+        store = self._make_store()
+        store.add(self._make_entry("Paper 1", source_type="paper", source_ref="ref1"))
+        store.add(self._make_entry("Paper 2", source_type="paper", source_ref="ref2"))
+        store.add(self._make_entry("Code 1", source_type="code", source_ref="ref3"))
+        result = _memory_status(store=store)
+        assert result["total_entries"] == 3
+        assert result["entries_by_source"]["paper"] == 2
+        assert result["entries_by_source"]["code"] == 1
+
+    def test_memory_status_includes_db_path(self):
+        from scholaragent.mcp_server import _memory_status
+
+        store = self._make_store()
+        result = _memory_status(store=store)
+        assert "db_path" in result
+        assert result["db_path"] == self.db_path
+
+    def test_memory_status_counts_research_log(self):
+        from scholaragent.mcp_server import _memory_status
+
+        store = self._make_store()
+        store.log_research(query="test query", depth="quick", focus="implementation", result_count=5)
+        result = _memory_status(store=store)
+        assert result["research_queries_logged"] == 1
+
+    # ---- memory_research validation ----
+
+    def test_memory_research_rejects_invalid_depth(self):
+        from scholaragent.mcp_server import _memory_research
+
+        pipeline = MagicMock()
+        result = _memory_research(pipeline=pipeline, query="test", depth="invalid")
+        assert "error" in result
+        pipeline.run.assert_not_called()
+
+    def test_memory_research_rejects_invalid_focus(self):
+        from scholaragent.mcp_server import _memory_research
+
+        pipeline = MagicMock()
+        result = _memory_research(pipeline=pipeline, query="test", focus="invalid")
+        assert "error" in result
+        pipeline.run.assert_not_called()
+
+    def test_memory_research_accepts_all_valid_depths(self):
+        from scholaragent.mcp_server import _memory_research, VALID_DEPTHS
+
+        for depth in VALID_DEPTHS:
+            pipeline = MagicMock()
+            pipeline.run.return_value = {"status": "completed"}
+            result = _memory_research(pipeline=pipeline, query="test", depth=depth)
+            assert "error" not in result
+            pipeline.run.assert_called_once()
+
+    def test_memory_research_accepts_all_valid_focuses(self):
+        from scholaragent.mcp_server import _memory_research, VALID_FOCUSES
+
+        for focus in VALID_FOCUSES:
+            pipeline = MagicMock()
+            pipeline.run.return_value = {"status": "completed"}
+            result = _memory_research(pipeline=pipeline, query="test", focus=focus)
+            assert "error" not in result
+            pipeline.run.assert_called_once()
+
+    def test_memory_research_passes_params_to_pipeline(self):
+        from scholaragent.mcp_server import _memory_research
+
+        pipeline = MagicMock()
+        pipeline.run.return_value = {"status": "completed"}
+        _memory_research(pipeline=pipeline, query="my query", depth="deep", focus="theory")
+        pipeline.run.assert_called_once_with(query="my query", depth="deep", focus="theory")
+
+
+class TestMCPToolJSONResponses:
+    """Test the MCP tool wrappers that return JSON strings."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self, tmp_path):
+        self.db_path = str(tmp_path / "test_memory.db")
+        self._original_store = None
+        with patch.dict(os.environ, {"SCHOLAR_MEMORY_DB": self.db_path}):
+            yield
+        # Cleanup global state
+        import scholaragent.mcp_server as mod
+        if self._original_store is not None:
+            mod._store = self._original_store
+
+    def _patch_store(self):
+        """Patch _get_store to return a test store with fake embeddings."""
+        import scholaragent.mcp_server as mod
         from scholaragent.memory.store import MemoryStore
 
+        self._original_store = mod._store
         store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
-        result = _memory_status(store=store)
-        assert "total_entries" in result
-        assert result["total_entries"] == 0
+        mod._store = store
+        return store
+
+    def test_memory_lookup_returns_valid_json(self):
+        self._patch_store()
+        from scholaragent.mcp_server import memory_lookup
+
+        result = memory_lookup(query="test")
+        parsed = json.loads(result)
+        assert isinstance(parsed, dict)
+        assert "results" in parsed
+
+    def test_memory_store_returns_valid_json(self):
+        self._patch_store()
+        from scholaragent.mcp_server import memory_store
+
+        result = memory_store(content="Test content", source="ref", tags=["t"])
+        parsed = json.loads(result)
+        assert parsed["status"] == "stored"
+
+    def test_memory_forget_returns_valid_json(self):
+        self._patch_store()
+        from scholaragent.mcp_server import memory_forget
+
+        result = memory_forget(query_or_id="nonexistent-id")
+        parsed = json.loads(result)
+        assert "deleted" in parsed
+
+    def test_memory_status_returns_valid_json(self):
+        self._patch_store()
+        from scholaragent.mcp_server import memory_status
+
+        result = memory_status()
+        parsed = json.loads(result)
+        assert "total_entries" in parsed
+
+    def test_memory_store_error_returns_valid_json(self):
+        self._patch_store()
+        from scholaragent.mcp_server import memory_store
+
+        result = memory_store(content="", source="ref", tags=[])
+        parsed = json.loads(result)
+        assert "error" in parsed
 
 
 class TestMCPCleanup:
@@ -90,10 +386,12 @@ class TestMCPCleanup:
 
     def test_cleanup_function_exists_and_callable(self):
         from scholaragent.mcp_server import _cleanup
+
         assert callable(_cleanup)
 
     def test_cleanup_when_store_is_none(self):
         import scholaragent.mcp_server as mod
+
         original = mod._store
         try:
             mod._store = None
@@ -104,6 +402,7 @@ class TestMCPCleanup:
 
     def test_cleanup_closes_store(self):
         import scholaragent.mcp_server as mod
+
         mock_store = MagicMock()
         original = mod._store
         try:
@@ -113,3 +412,33 @@ class TestMCPCleanup:
             assert mod._store is None
         finally:
             mod._store = original
+
+
+class TestMCPValidationConstants:
+    """Test that validation constants are properly defined."""
+
+    def test_valid_depths_defined(self):
+        from scholaragent.mcp_server import VALID_DEPTHS
+
+        assert "quick" in VALID_DEPTHS
+        assert "normal" in VALID_DEPTHS
+        assert "deep" in VALID_DEPTHS
+        assert len(VALID_DEPTHS) == 3
+
+    def test_valid_focuses_defined(self):
+        from scholaragent.mcp_server import VALID_FOCUSES
+
+        assert "implementation" in VALID_FOCUSES
+        assert "theory" in VALID_FOCUSES
+        assert "comparison" in VALID_FOCUSES
+        assert len(VALID_FOCUSES) == 3
+
+    def test_valid_depths_is_frozenset(self):
+        from scholaragent.mcp_server import VALID_DEPTHS
+
+        assert isinstance(VALID_DEPTHS, frozenset)
+
+    def test_valid_focuses_is_frozenset(self):
+        from scholaragent.mcp_server import VALID_FOCUSES
+
+        assert isinstance(VALID_FOCUSES, frozenset)
