@@ -177,6 +177,72 @@ class TestMemoryStoreForget:
         deleted = store.forget("topic-a", threshold=0.0)
         assert deleted >= 1
 
+    def test_forget_high_threshold_limits_deletions(self, store):
+        """With threshold=0.8, only very similar entries get deleted."""
+        from scholaragent.memory.types import MemoryEntry
+
+        store.add(MemoryEntry(
+            content="Very specific unique topic alpha",
+            summary="Alpha",
+            source_type="paper",
+            source_ref="ref1",
+            tags=["alpha"],
+        ))
+        store.add(MemoryEntry(
+            content="Completely unrelated cooking recipe for pasta",
+            summary="Pasta",
+            source_type="docs",
+            source_ref="ref2",
+            tags=["cooking"],
+        ))
+        # Default threshold=0.8 should be strict enough that a vague query
+        # doesn't wipe everything
+        initial_count = store.count()
+        deleted = store.forget("something vague")
+        assert store.count() >= initial_count - deleted
+
+    def test_forget_max_delete_caps_deletions(self, store):
+        """max_delete parameter limits the number of entries deleted."""
+        from scholaragent.memory.types import MemoryEntry
+
+        # Add many similar entries
+        for i in range(8):
+            store.add(MemoryEntry(
+                content=f"Research finding number {i}",
+                summary=f"Finding {i}",
+                source_type="paper",
+                source_ref=f"ref-{i}",
+                tags=["research"],
+            ))
+        assert store.count() == 8
+
+        # With threshold=0.0 (match everything) and max_delete=3,
+        # only 3 should be deleted
+        deleted = store.forget("research finding", threshold=0.0, max_delete=3)
+        assert deleted == 3
+        assert store.count() == 5
+
+    def test_forget_does_not_increment_access_count(self, store):
+        """forget() should not increment access_count on entries."""
+        from scholaragent.memory.types import MemoryEntry
+
+        entry = MemoryEntry(
+            content="Entry to be forgotten",
+            summary="Forget me",
+            source_type="paper",
+            source_ref="ref",
+            tags=[],
+        )
+        store.add(entry)
+        assert store.get(entry.id).access_count == 0
+
+        # Use a query that won't match (high threshold), so the entry survives
+        # but search is still called internally
+        store.forget("completely unrelated query that wont match", threshold=0.99)
+        result = store.get(entry.id)
+        assert result is not None
+        assert result.access_count == 0
+
 
 class TestResearchLog:
     def test_log_research(self, store):

@@ -99,6 +99,7 @@ class MemoryStore:
         query: str,
         max_results: int = 5,
         sources: list[str] | None = None,
+        _update_access: bool = True,
     ) -> list[tuple[MemoryEntry, float]]:
         """Semantic search over all entries. Returns (entry, score) pairs."""
         query_embedding = self.embeddings.embed(query)
@@ -125,27 +126,39 @@ class MemoryStore:
         scored.sort(key=lambda x: x[1], reverse=True)
 
         results = scored[:max_results]
-        with self._lock:
-            for entry, _ in results:
-                self._conn.execute(
-                    "UPDATE entries SET access_count = access_count + 1 WHERE id = ?",
-                    (entry.id,),
-                )
-            self._conn.commit()
+        if _update_access:
+            with self._lock:
+                for entry, _ in results:
+                    self._conn.execute(
+                        "UPDATE entries SET access_count = access_count + 1 WHERE id = ?",
+                        (entry.id,),
+                    )
+                self._conn.commit()
 
         return results
 
-    def forget(self, query_or_id: str, threshold: float = 0.5) -> int:
-        """Delete entries by ID or by semantic similarity to query."""
+    def forget(
+        self,
+        query_or_id: str,
+        threshold: float = 0.8,
+        max_delete: int = 5,
+    ) -> int:
+        """Delete entries by ID or by semantic similarity to query.
+
+        Safety guardrails:
+        - threshold defaults to 0.8 (only very close matches)
+        - max_delete caps the number of semantic deletions
+        - Does not increment access_count on entries being deleted
+        """
         existing = self.get(query_or_id)
         if existing:
             self.delete(query_or_id)
             return 1
 
-        results = self.search(query_or_id, max_results=100)
+        results = self.search(query_or_id, max_results=10, _update_access=False)
         deleted = 0
         for entry, score in results:
-            if score >= threshold:
+            if score >= threshold and deleted < max_delete:
                 self.delete(entry.id)
                 deleted += 1
         return deleted
