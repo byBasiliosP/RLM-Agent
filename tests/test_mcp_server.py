@@ -91,3 +91,33 @@ class TestMCPToolFunctions:
         result = _memory_status(store=store)
         assert "total_entries" in result
         assert result["total_entries"] == 0
+
+
+class TestMCPCleanup:
+    """Test the atexit cleanup handler."""
+
+    def test_cleanup_function_exists_and_callable(self):
+        from scholaragent.mcp_server import _cleanup
+        assert callable(_cleanup)
+
+    def test_cleanup_when_store_is_none(self):
+        import scholaragent.mcp_server as mod
+        original = mod._store
+        try:
+            mod._store = None
+            mod._cleanup()  # should not raise
+            assert mod._store is None
+        finally:
+            mod._store = original
+
+    def test_cleanup_closes_store(self):
+        import scholaragent.mcp_server as mod
+        mock_store = MagicMock()
+        original = mod._store
+        try:
+            mod._store = mock_store
+            mod._cleanup()
+            mock_store.close.assert_called_once()
+            assert mod._store is None
+        finally:
+            mod._store = original

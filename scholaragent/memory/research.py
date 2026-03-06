@@ -55,7 +55,7 @@ class ResearchPipeline:
 
         # Collect raw sources
         source_types = ["paper", "code", "docs"]
-        raw_results = self._collect_sources(query, sources=source_types)
+        raw_results, errors = self._collect_sources(query, sources=source_types)
 
         # For quick depth, just index raw results
         entries_added = 0
@@ -85,6 +85,7 @@ class ResearchPipeline:
             "depth": depth,
             "query": query,
             "entries_added": entries_added,
+            "errors": errors,
             "message": f"Research complete. {entries_added} entries indexed.",
         }
 
@@ -92,10 +93,16 @@ class ResearchPipeline:
         self,
         query: str,
         sources: list[str] | None = None,
-    ) -> list[dict]:
-        """Collect raw results from all source adapters."""
+    ) -> tuple[list[dict], list[str]]:
+        """Collect raw results from all source adapters.
+
+        Returns:
+            Tuple of (results, errors) where errors is a list of
+            human-readable error strings from any failed source adapters.
+        """
         sources = sources or ["paper", "code", "docs"]
         results = []
+        errors = []
 
         if "paper" in sources:
             # arXiv
@@ -109,8 +116,8 @@ class ResearchPipeline:
                             "source_type": "paper",
                             "source_ref": f"arxiv:{paper.get('arxiv_id', '')}",
                         })
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"arXiv: {type(e).__name__}: {e}")
 
             # Semantic Scholar
             try:
@@ -123,24 +130,24 @@ class ResearchPipeline:
                             "source_type": "paper",
                             "source_ref": f"s2:{paper.get('paper_id', '')}",
                         })
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"Semantic Scholar: {type(e).__name__}: {e}")
 
         if "code" in sources:
             try:
                 code_results = search_github_code(query, language="python", max_results=5)
                 results.extend(code_results)
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"GitHub: {type(e).__name__}: {e}")
 
         if "docs" in sources:
             try:
                 doc_results = search_docs(query, max_results=3)
                 results.extend(doc_results)
-            except Exception:
-                pass
+            except Exception as e:
+                errors.append(f"Docs: {type(e).__name__}: {e}")
 
-        return results
+        return results, errors
 
     def _check_dedup(self, query: str) -> ResearchLogEntry | None:
         """Check if similar research was done recently."""

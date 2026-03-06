@@ -18,6 +18,7 @@ Configuration for coding agents:
 }
 """
 
+import atexit
 import json
 import os
 from pathlib import Path
@@ -35,6 +36,17 @@ _pipeline: ResearchPipeline | None = None
 
 DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
 DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
+
+
+def _cleanup():
+    """Close the global memory store on interpreter exit."""
+    global _store
+    if _store is not None:
+        _store.close()
+        _store = None
+
+
+atexit.register(_cleanup)
 
 
 def _get_store() -> MemoryStore:
