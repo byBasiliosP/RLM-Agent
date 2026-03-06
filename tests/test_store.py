@@ -236,10 +236,9 @@ class TestMemoryStoreForget:
         store.add(entry)
         assert store.get(entry.id).access_count == 0
 
-        # Use threshold=1.0 so nothing can match (cosine sim is always < 1.0
-        # for non-identical embeddings), ensuring the entry survives but
-        # search() is still called internally.
-        store.forget("completely unrelated query that wont match", threshold=1.0)
+        # Use threshold > 1.0 so nothing can match (cosine sim maxes at 1.0),
+        # ensuring the entry survives but search() is still called internally.
+        store.forget("completely unrelated query that wont match", threshold=1.1)
         result = store.get(entry.id)
         assert result is not None
         assert result.access_count == 0
