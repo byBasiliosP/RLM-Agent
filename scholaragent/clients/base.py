@@ -1,8 +1,15 @@
 """Abstract base class for all language model clients."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 from scholaragent.core.types import ModelUsageSummary, UsageSummary
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from scholaragent.clients.rate_limiter import RateLimiter
 
 
 class BaseLM(ABC):
@@ -17,10 +24,12 @@ class BaseLM(ABC):
         model_name: str,
         timeout: float = 120.0,
         max_tokens: int | None = None,
+        rate_limiter: RateLimiter | None = None,
     ):
         self.model_name = model_name
         self.timeout = timeout
         self.max_tokens = max_tokens
+        self.rate_limiter = rate_limiter
 
     @abstractmethod
     def completion(self, prompt: str) -> str:

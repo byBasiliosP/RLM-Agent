@@ -360,3 +360,37 @@ class TestCompletionMessages:
         assert usage.prompt_tokens == 15
         assert usage.completion_tokens == 8
         assert usage.total_tokens == 23
+
+
+# ---------------------------------------------------------------------------
+# 8. RateLimiter integration
+# ---------------------------------------------------------------------------
+class TestRateLimiterIntegration:
+    def test_openai_client_has_rate_limiter_from_router(self):
+        from scholaragent.clients.rate_limiter import RateLimiter
+
+        router = ModelRouter(
+            strong=ModelConfig(backend="openai", model_name="gpt-4o"),
+            cheap=ModelConfig(backend="openai", model_name="gpt-4o-mini"),
+        )
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = router.get_client("analyst")
+        assert isinstance(client.rate_limiter, RateLimiter)
+        assert client.rate_limiter.rpm == 60
+
+    def test_anthropic_client_has_rate_limiter_from_router(self):
+        from scholaragent.clients.rate_limiter import RateLimiter
+
+        router = ModelRouter(
+            strong=ModelConfig(backend="anthropic", model_name="claude-sonnet-4-6"),
+            cheap=ModelConfig(backend="anthropic", model_name="claude-haiku-3"),
+        )
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = router.get_client("scout")
+        assert isinstance(client.rate_limiter, RateLimiter)
+        assert client.rate_limiter.rpm == 50
+
+    def test_base_client_rate_limiter_defaults_none(self):
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="gpt-4o", api_key="fake")
+        assert client.rate_limiter is None

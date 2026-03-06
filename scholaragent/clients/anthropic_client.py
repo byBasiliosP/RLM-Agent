@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import anthropic
 
+from typing import TYPE_CHECKING
+
 from scholaragent.clients.base import BaseLM
 from scholaragent.core.types import ModelUsageSummary, UsageSummary
+
+if TYPE_CHECKING:
+    from scholaragent.clients.rate_limiter import RateLimiter
 
 
 class AnthropicClient(BaseLM):
@@ -17,8 +22,9 @@ class AnthropicClient(BaseLM):
         api_key: str | None = None,
         timeout: float = 120.0,
         max_tokens: int | None = None,
+        rate_limiter: "RateLimiter | None" = None,
     ):
-        super().__init__(model_name, timeout=timeout, max_tokens=max_tokens)
+        super().__init__(model_name, timeout=timeout, max_tokens=max_tokens, rate_limiter=rate_limiter)
         self._sync_client = anthropic.Anthropic(
             api_key=api_key, timeout=self.timeout
         )
@@ -65,15 +71,21 @@ class AnthropicClient(BaseLM):
     # Public API
     # ------------------------------------------------------------------
     def completion(self, prompt: str) -> str:
+        if self.rate_limiter:
+            self.rate_limiter.wait_if_needed()
         response = self._sync_client.messages.create(
             model=self.model_name,
             max_tokens=self.max_tokens or 4096,
             messages=[{"role": "user", "content": prompt}],
         )
         self._record_usage(response.usage)
+        if self.rate_limiter:
+            self.rate_limiter.record_tokens(self._last_usage.total_tokens)
         return response.content[0].text if response.content else ""
 
     def completion_messages(self, messages: list[dict[str, str]]) -> str:
+        if self.rate_limiter:
+            self.rate_limiter.wait_if_needed()
         system_msg = ""
         api_messages = []
         for msg in messages:
@@ -90,15 +102,21 @@ class AnthropicClient(BaseLM):
             kwargs["system"] = system_msg
         response = self._sync_client.messages.create(**kwargs)
         self._record_usage(response.usage)
+        if self.rate_limiter:
+            self.rate_limiter.record_tokens(self._last_usage.total_tokens)
         return response.content[0].text if response.content else ""
 
     async def acompletion(self, prompt: str) -> str:
+        if self.rate_limiter:
+            self.rate_limiter.wait_if_needed()
         response = await self._async_client.messages.create(
             model=self.model_name,
             max_tokens=self.max_tokens or 4096,
             messages=[{"role": "user", "content": prompt}],
         )
         self._record_usage(response.usage)
+        if self.rate_limiter:
+            self.rate_limiter.record_tokens(self._last_usage.total_tokens)
         return response.content[0].text if response.content else ""
 
     def get_usage_summary(self) -> UsageSummary:

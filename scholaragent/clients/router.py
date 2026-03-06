@@ -37,6 +37,8 @@ class ModelRouter:
 
     def get_client(self, role: str) -> BaseLM:
         """Create and return a BaseLM client for the given role."""
+        from scholaragent.clients.rate_limiter import PROVIDER_DEFAULTS, RateLimiter
+
         config = self.get_config(role)
         kwargs: dict = {"model_name": config.model_name}
         if config.max_tokens is not None:
@@ -44,10 +46,14 @@ class ModelRouter:
         if config.backend == "openai":
             from scholaragent.clients.openai_client import OpenAIClient
 
-            return OpenAIClient(**kwargs)
+            client = OpenAIClient(**kwargs)
         elif config.backend == "anthropic":
             from scholaragent.clients.anthropic_client import AnthropicClient
 
-            return AnthropicClient(**kwargs)
+            client = AnthropicClient(**kwargs)
         else:
             raise ValueError(f"Unknown backend: {config.backend}")
+
+        if config.backend in PROVIDER_DEFAULTS:
+            client.rate_limiter = RateLimiter(**PROVIDER_DEFAULTS[config.backend])
+        return client
