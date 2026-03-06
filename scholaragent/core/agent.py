@@ -83,7 +83,7 @@ class SpecialistAgent(ABC):
 
         for i in range(max_iterations):
             # Get LLM response
-            llm_response = handler.completion(prompt=self._format_messages(messages))
+            llm_response = handler.completion_messages(messages)
 
             # Check for inline FINAL()
             final_answer = find_final_answer(llm_response)

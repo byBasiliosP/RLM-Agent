@@ -73,6 +73,25 @@ class AnthropicClient(BaseLM):
         self._record_usage(response.usage)
         return response.content[0].text if response.content else ""
 
+    def completion_messages(self, messages: list[dict[str, str]]) -> str:
+        system_msg = ""
+        api_messages = []
+        for msg in messages:
+            if msg["role"] == "system":
+                system_msg = msg["content"]
+            else:
+                api_messages.append(msg)
+        kwargs: dict = {
+            "model": self.model_name,
+            "max_tokens": self.max_tokens or 4096,
+            "messages": api_messages,
+        }
+        if system_msg:
+            kwargs["system"] = system_msg
+        response = self._sync_client.messages.create(**kwargs)
+        self._record_usage(response.usage)
+        return response.content[0].text if response.content else ""
+
     async def acompletion(self, prompt: str) -> str:
         response = await self._async_client.messages.create(
             model=self.model_name,

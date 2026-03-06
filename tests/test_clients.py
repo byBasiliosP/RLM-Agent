@@ -224,3 +224,139 @@ class TestClientTimeoutAndMaxTokens:
         with patch("scholaragent.clients.openai_client.openai"):
             client = router.get_client("analyst")
         assert client.max_tokens is None
+
+
+# ---------------------------------------------------------------------------
+# 7. completion_messages() -- preserves role structure
+# ---------------------------------------------------------------------------
+class TestCompletionMessages:
+    """Tests for the completion_messages method on BaseLM subclasses."""
+
+    _messages = [
+        {"role": "system", "content": "You are helpful."},
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there!"},
+        {"role": "user", "content": "Thanks"},
+    ]
+
+    def test_completion_messages_exists_on_openai(self):
+        assert hasattr(OpenAIClient, "completion_messages")
+
+    def test_completion_messages_exists_on_anthropic(self):
+        assert hasattr(AnthropicClient, "completion_messages")
+
+    def test_openai_completion_messages_passes_messages_directly(self):
+        with patch("scholaragent.clients.openai_client.openai") as mock_openai:
+            client = OpenAIClient(model_name="gpt-4o", max_tokens=100)
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "response text"
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 5
+
+        client._sync_client.chat.completions.create = MagicMock(return_value=mock_response)
+
+        result = client.completion_messages(self._messages)
+
+        call_kwargs = client._sync_client.chat.completions.create.call_args
+        assert call_kwargs[1]["messages"] == self._messages
+        assert call_kwargs[1]["model"] == "gpt-4o"
+        assert call_kwargs[1]["max_tokens"] == 100
+        assert result == "response text"
+
+    def test_openai_completion_messages_omits_max_tokens_when_none(self):
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="gpt-4o")
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage.prompt_tokens = 1
+        mock_response.usage.completion_tokens = 1
+
+        client._sync_client.chat.completions.create = MagicMock(return_value=mock_response)
+        client.completion_messages(self._messages)
+
+        call_kwargs = client._sync_client.chat.completions.create.call_args[1]
+        assert "max_tokens" not in call_kwargs
+
+    def test_anthropic_completion_messages_extracts_system(self):
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="claude-sonnet-4-20250514")
+
+        mock_response = MagicMock()
+        mock_content = MagicMock()
+        mock_content.text = "response text"
+        mock_response.content = [mock_content]
+        mock_response.usage.input_tokens = 10
+        mock_response.usage.output_tokens = 5
+
+        client._sync_client.messages.create = MagicMock(return_value=mock_response)
+
+        result = client.completion_messages(self._messages)
+
+        call_kwargs = client._sync_client.messages.create.call_args[1]
+        assert call_kwargs["system"] == "You are helpful."
+        # system message should NOT appear in the messages list
+        for msg in call_kwargs["messages"]:
+            assert msg["role"] != "system"
+        assert len(call_kwargs["messages"]) == 3
+        assert call_kwargs["messages"][0] == {"role": "user", "content": "Hello"}
+        assert result == "response text"
+
+    def test_anthropic_completion_messages_no_system(self):
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="claude-sonnet-4-20250514")
+
+        mock_response = MagicMock()
+        mock_content = MagicMock()
+        mock_content.text = "ok"
+        mock_response.content = [mock_content]
+        mock_response.usage.input_tokens = 1
+        mock_response.usage.output_tokens = 1
+
+        client._sync_client.messages.create = MagicMock(return_value=mock_response)
+
+        msgs_no_system = [m for m in self._messages if m["role"] != "system"]
+        client.completion_messages(msgs_no_system)
+
+        call_kwargs = client._sync_client.messages.create.call_args[1]
+        assert "system" not in call_kwargs
+
+    def test_openai_completion_messages_records_usage(self):
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="gpt-4o")
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "ok"
+        mock_response.usage.prompt_tokens = 20
+        mock_response.usage.completion_tokens = 10
+
+        client._sync_client.chat.completions.create = MagicMock(return_value=mock_response)
+        client.completion_messages(self._messages)
+
+        usage = client.get_last_usage()
+        assert usage.prompt_tokens == 20
+        assert usage.completion_tokens == 10
+        assert usage.total_tokens == 30
+
+    def test_anthropic_completion_messages_records_usage(self):
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="claude-sonnet-4-20250514")
+
+        mock_response = MagicMock()
+        mock_content = MagicMock()
+        mock_content.text = "ok"
+        mock_response.content = [mock_content]
+        mock_response.usage.input_tokens = 15
+        mock_response.usage.output_tokens = 8
+
+        client._sync_client.messages.create = MagicMock(return_value=mock_response)
+        client.completion_messages(self._messages)
+
+        usage = client.get_last_usage()
+        assert usage.prompt_tokens == 15
+        assert usage.completion_tokens == 8
+        assert usage.total_tokens == 23

@@ -32,6 +32,26 @@ class BaseLM(ABC):
         """Single async completion."""
         ...
 
+    def completion_messages(self, messages: list[dict[str, str]]) -> str:
+        """Completion from a structured message list.
+
+        The default implementation flattens messages into a single string
+        and delegates to :meth:`completion`.  Subclasses (OpenAI, Anthropic)
+        override this to pass the native message array to the API so that
+        system / user / assistant roles are preserved.
+        """
+        parts = []
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            if role == "system":
+                parts.append(f"[System]\n{content}")
+            elif role == "user":
+                parts.append(f"[User]\n{content}")
+            elif role == "assistant":
+                parts.append(f"[Assistant]\n{content}")
+        return self.completion("\n\n".join(parts))
+
     @abstractmethod
     def get_usage_summary(self) -> UsageSummary:
         """Get cumulative usage summary for all calls made by this client."""

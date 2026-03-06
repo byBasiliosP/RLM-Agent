@@ -122,6 +122,10 @@ class LMHandler:
         """Direct (in-process) completion call."""
         return self.get_client(model).completion(prompt)
 
+    def completion_messages(self, messages: list[dict[str, str]], model: str | None = None) -> str:
+        """Direct (in-process) completion preserving message roles."""
+        return self.get_client(model).completion_messages(messages)
+
     # ----- context manager ---------------------------------------------------
 
     def __enter__(self):

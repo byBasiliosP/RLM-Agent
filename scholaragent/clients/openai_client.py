@@ -74,6 +74,14 @@ class OpenAIClient(BaseLM):
         self._record_usage(response.usage)
         return response.choices[0].message.content or ""
 
+    def completion_messages(self, messages: list[dict[str, str]]) -> str:
+        kwargs: dict = {"model": self.model_name, "messages": messages}
+        if self.max_tokens is not None:
+            kwargs["max_tokens"] = self.max_tokens
+        response = self._sync_client.chat.completions.create(**kwargs)
+        self._record_usage(response.usage)
+        return response.choices[0].message.content or ""
+
     async def acompletion(self, prompt: str) -> str:
         messages = [{"role": "user", "content": prompt}]
         kwargs: dict = {"model": self.model_name, "messages": messages}
