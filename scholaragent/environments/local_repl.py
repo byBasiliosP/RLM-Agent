@@ -15,7 +15,6 @@ import json
 import math
 import re
 import statistics
-import sys
 import textwrap
 import threading
 from typing import Any
@@ -167,6 +166,7 @@ class LocalREPL(BaseEnv):
         self.custom_tools = custom_tools or {}
         self._lock = threading.Lock()
         self._original_context: Any = None
+        self._current_print = print  # overridden per-call in execute_code
 
         # Validate custom tools don't clash with reserved names
         conflicts = set(self.custom_tools.keys()) & RESERVED_NAMES
@@ -255,8 +255,8 @@ class LocalREPL(BaseEnv):
         return f"Available variables: {available}"
 
     def _show_progress(self, msg: str) -> None:
-        """Print a progress message (captured by output redirect)."""
-        print(f"[PROGRESS] {msg}")
+        """Print a progress message (captured by namespace-scoped print)."""
+        self._current_print(f"[PROGRESS] {msg}")
 
     def _llm_query(self, prompt: str) -> str:
         """Query the LM handler via TCP socket.
@@ -305,11 +305,18 @@ class LocalREPL(BaseEnv):
         self._last_final_answer = None
         stdout_capture = io.StringIO()
 
+        # Thread-safe print override: writes to a per-call buffer instead of
+        # touching the global sys.stdout, so concurrent REPL instances don't
+        # race on the stream.
+        def _safe_print(*args, sep=' ', end='\n', file=None, flush=False):
+            output = sep.join(str(a) for a in args) + end
+            stdout_capture.write(output)
+
         with self._lock:
-            old_stdout = sys.stdout
             try:
-                sys.stdout = stdout_capture
+                self._current_print = _safe_print
                 combined = {**self.globals, **self.locals}
+                combined["__builtins__"]["print"] = _safe_print
                 _run_code(code, combined)
 
                 # Sync new/updated user variables back to locals
@@ -337,7 +344,9 @@ class LocalREPL(BaseEnv):
                     final_value=self._last_final_answer,
                 )
             finally:
-                sys.stdout = old_stdout
+                # Restore original print builtin in the globals dict
+                self.globals["__builtins__"]["print"] = print
+                self._current_print = print
 
     def _restore_scaffold(self) -> None:
         """Restore reserved names after execution to prevent namespace corruption."""

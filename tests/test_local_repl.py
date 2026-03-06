@@ -214,6 +214,21 @@ class TestLocalREPLOutputCapture:
         result = repl.execute_code("x = 1")
         assert result.output == ""
 
+    def test_print_sep_parameter(self):
+        repl = LocalREPL()
+        result = repl.execute_code("print('a', 'b', sep='-')")
+        assert result.output == "a-b\n"
+
+    def test_print_end_parameter(self):
+        repl = LocalREPL()
+        result = repl.execute_code("print('x', end='')")
+        assert result.output == "x"
+
+    def test_print_multiple_args(self):
+        repl = LocalREPL()
+        result = repl.execute_code("print('hello', 'world')")
+        assert result.output == "hello world\n"
+
 
 class TestLocalREPLCustomTools:
     """Tests for custom tools injection."""
