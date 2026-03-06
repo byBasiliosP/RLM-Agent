@@ -15,6 +15,7 @@ class ModelConfig:
 
     backend: str  # "openai" or "anthropic"
     model_name: str
+    max_tokens: int | None = None
 
 
 class ModelRouter:
@@ -37,13 +38,16 @@ class ModelRouter:
     def get_client(self, role: str) -> BaseLM:
         """Create and return a BaseLM client for the given role."""
         config = self.get_config(role)
+        kwargs: dict = {"model_name": config.model_name}
+        if config.max_tokens is not None:
+            kwargs["max_tokens"] = config.max_tokens
         if config.backend == "openai":
             from scholaragent.clients.openai_client import OpenAIClient
 
-            return OpenAIClient(model_name=config.model_name)
+            return OpenAIClient(**kwargs)
         elif config.backend == "anthropic":
             from scholaragent.clients.anthropic_client import AnthropicClient
 
-            return AnthropicClient(model_name=config.model_name)
+            return AnthropicClient(**kwargs)
         else:
             raise ValueError(f"Unknown backend: {config.backend}")

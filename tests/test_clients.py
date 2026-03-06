@@ -153,3 +153,74 @@ class TestClientSubclassing:
         usage = client.get_last_usage()
         assert isinstance(usage, ModelUsageSummary)
         assert usage.total_tokens == 0
+
+
+# ---------------------------------------------------------------------------
+# 6. Timeout and max_tokens configuration
+# ---------------------------------------------------------------------------
+class TestClientTimeoutAndMaxTokens:
+    def test_openai_default_timeout(self):
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="gpt-4o", api_key="fake")
+        assert client.timeout == 120.0
+
+    def test_anthropic_default_timeout(self):
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="claude-sonnet-4-20250514", api_key="fake")
+        assert client.timeout == 120.0
+
+    def test_openai_custom_timeout(self):
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="test", api_key="fake", timeout=30.0)
+        assert client.timeout == 30.0
+
+    def test_anthropic_custom_timeout(self):
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="test", api_key="fake", timeout=60.0)
+        assert client.timeout == 60.0
+
+    def test_openai_default_max_tokens_is_none(self):
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="test", api_key="fake")
+        assert client.max_tokens is None
+
+    def test_anthropic_default_max_tokens_is_none(self):
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="test", api_key="fake")
+        assert client.max_tokens is None
+
+    def test_openai_custom_max_tokens(self):
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="test", api_key="fake", max_tokens=2048)
+        assert client.max_tokens == 2048
+
+    def test_anthropic_custom_max_tokens(self):
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="test", api_key="fake", max_tokens=8192)
+        assert client.max_tokens == 8192
+
+    def test_model_config_max_tokens_default_none(self):
+        cfg = ModelConfig(backend="openai", model_name="gpt-4o")
+        assert cfg.max_tokens is None
+
+    def test_model_config_max_tokens_set(self):
+        cfg = ModelConfig(backend="openai", model_name="gpt-4o", max_tokens=8192)
+        assert cfg.max_tokens == 8192
+
+    def test_router_passes_max_tokens(self):
+        router = ModelRouter(
+            strong=ModelConfig(backend="openai", model_name="gpt-4o", max_tokens=4096),
+            cheap=ModelConfig(backend="openai", model_name="gpt-4o-mini"),
+        )
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = router.get_client("analyst")
+        assert client.max_tokens == 4096
+
+    def test_router_no_max_tokens(self):
+        router = ModelRouter(
+            strong=ModelConfig(backend="openai", model_name="gpt-4o"),
+            cheap=ModelConfig(backend="openai", model_name="gpt-4o-mini"),
+        )
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = router.get_client("analyst")
+        assert client.max_tokens is None

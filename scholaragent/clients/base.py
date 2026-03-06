@@ -12,8 +12,15 @@ class BaseLM(ABC):
     without knowing the underlying SDK.
     """
 
-    def __init__(self, model_name: str):
+    def __init__(
+        self,
+        model_name: str,
+        timeout: float = 120.0,
+        max_tokens: int | None = None,
+    ):
         self.model_name = model_name
+        self.timeout = timeout
+        self.max_tokens = max_tokens
 
     @abstractmethod
     def completion(self, prompt: str) -> str:
