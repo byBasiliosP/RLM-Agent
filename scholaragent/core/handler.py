@@ -8,6 +8,7 @@ from socketserver import StreamRequestHandler, ThreadingTCPServer
 from threading import Thread
 
 from scholaragent.clients.base import BaseLM
+from scholaragent.clients.token_counter import TokenCounter
 from scholaragent.core.comms import socket_recv, socket_send
 
 
@@ -62,6 +63,8 @@ class LMHandler:
         client: BaseLM,
         host: str = "127.0.0.1",
         port: int = 0,
+        token_counter: TokenCounter | None = None,
+        verbose: bool = False,
     ):
         self.default_client = client
         self.clients: dict[str, BaseLM] = {client.model_name: client}
@@ -69,6 +72,8 @@ class LMHandler:
         self._server: ThreadingLMServer | None = None
         self._thread: Thread | None = None
         self._port = port
+        self.token_counter = token_counter
+        self.verbose = verbose
 
     # ----- client registry ---------------------------------------------------
 
@@ -120,11 +125,26 @@ class LMHandler:
 
     def completion(self, prompt: str, model: str | None = None) -> str:
         """Direct (in-process) completion call."""
-        return self.get_client(model).completion(prompt)
+        client = self.get_client(model)
+        result = client.completion(prompt)
+        self._record_usage(client)
+        return result
 
     def completion_messages(self, messages: list[dict[str, str]], model: str | None = None) -> str:
         """Direct (in-process) completion preserving message roles."""
-        return self.get_client(model).completion_messages(messages)
+        client = self.get_client(model)
+        result = client.completion_messages(messages)
+        self._record_usage(client)
+        return result
+
+    def _record_usage(self, client: BaseLM) -> None:
+        """Record token usage from the last call if a counter is configured."""
+        if self.token_counter is None:
+            return
+        usage = client.get_last_usage()
+        self.token_counter.record(client.model_name, usage.prompt_tokens, usage.completion_tokens)
+        if self.verbose:
+            self.token_counter.log_call(client.model_name, usage.prompt_tokens, usage.completion_tokens)
 
     # ----- context manager ---------------------------------------------------
 

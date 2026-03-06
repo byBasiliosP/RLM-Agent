@@ -3,6 +3,7 @@
 __version__ = "0.2.0"
 
 from scholaragent.clients.router import ModelConfig, ModelRouter
+from scholaragent.clients.token_counter import TokenCounter
 from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.dispatcher import Dispatcher
 from scholaragent.core.handler import LMHandler
@@ -44,9 +45,10 @@ class ScholarAgent:
             cheap=ModelConfig(**cheap_model),
         )
 
-        # Create LM handler with the strong model client
+        # Create token counter and LM handler with the strong model client
+        self.token_counter = TokenCounter()
         strong_client = self.router.get_client("dispatcher")
-        self.handler = LMHandler(client=strong_client)
+        self.handler = LMHandler(client=strong_client, token_counter=self.token_counter, verbose=self.verbose)
 
         # Register cheap client too
         cheap_client = self.router.get_client("scout")
@@ -73,11 +75,15 @@ class ScholarAgent:
             AgentResult with the research findings.
         """
         with self.handler:
-            return self.dispatcher.run(
+            result = self.dispatcher.run(
                 task=query,
                 max_iterations=self.max_iterations,
                 verbose=self.verbose,
             )
+            report = self.token_counter.report()
+            if report:
+                print(report)
+            return result
 
     def __repr__(self) -> str:
         agents = self.registry.list_agents()

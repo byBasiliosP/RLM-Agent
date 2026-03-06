@@ -165,3 +165,62 @@ class TestLMHandlerRoundTrip:
             response = socket_request(handler.address, {"prompt": "hi"})
             assert response["status"] == "error"
             assert "boom" in response["error"]
+
+
+# ---------------------------------------------------------------------------
+# Token counter wiring tests
+# ---------------------------------------------------------------------------
+
+
+class TestTokenCounterWiring:
+    def test_handler_records_usage(self):
+        """LMHandler records token usage when token_counter is provided."""
+        from unittest.mock import MagicMock
+        from scholaragent.clients.token_counter import TokenCounter
+
+        mock_client = MagicMock()
+        mock_client.model_name = "test-model"
+        mock_client.completion.return_value = "response"
+        mock_client.get_last_usage.return_value = ModelUsageSummary(
+            prompt_tokens=100, completion_tokens=50, total_tokens=150
+        )
+
+        counter = TokenCounter()
+        handler = LMHandler(client=mock_client, token_counter=counter)
+        handler.completion("test prompt")
+
+        s = counter.summary()
+        assert s["models"]["test-model"]["prompt_tokens"] == 100
+        assert s["total"]["total_tokens"] == 150
+
+    def test_handler_without_counter_works(self):
+        """LMHandler works fine without a token counter."""
+        from unittest.mock import MagicMock
+
+        mock_client = MagicMock()
+        mock_client.model_name = "test-model"
+        mock_client.completion.return_value = "response"
+
+        handler = LMHandler(client=mock_client)
+        result = handler.completion("test")
+        assert result == "response"
+
+    def test_handler_verbose_logs(self, capsys):
+        """LMHandler logs token usage when verbose=True."""
+        from unittest.mock import MagicMock
+        from scholaragent.clients.token_counter import TokenCounter
+
+        mock_client = MagicMock()
+        mock_client.model_name = "test-model"
+        mock_client.completion.return_value = "response"
+        mock_client.get_last_usage.return_value = ModelUsageSummary(
+            prompt_tokens=100, completion_tokens=50, total_tokens=150
+        )
+
+        counter = TokenCounter()
+        handler = LMHandler(client=mock_client, token_counter=counter, verbose=True)
+        handler.completion("test prompt")
+
+        captured = capsys.readouterr()
+        assert "test-model" in captured.out
+        assert "150" in captured.out

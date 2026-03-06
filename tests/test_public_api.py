@@ -148,7 +148,20 @@ class TestRepr:
 
 
 # ---------------------------------------------------------------------------
-# 7. research() calls dispatcher.run()
+# 7. Token counter wiring
+# ---------------------------------------------------------------------------
+class TestScholarAgentTokenCounter:
+    def test_scholar_agent_has_token_counter(self, scholar):
+        from scholaragent.clients.token_counter import TokenCounter
+
+        assert isinstance(scholar.token_counter, TokenCounter)
+
+    def test_handler_has_token_counter(self, scholar):
+        assert scholar.handler.token_counter is scholar.token_counter
+
+
+# ---------------------------------------------------------------------------
+# 8. research() calls dispatcher.run()
 # ---------------------------------------------------------------------------
 class TestResearchCallsDispatcher:
     def test_research_delegates_to_dispatcher(self, scholar):
