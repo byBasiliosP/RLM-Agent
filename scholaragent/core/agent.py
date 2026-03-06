@@ -1,6 +1,6 @@
 """Base SpecialistAgent abstraction for ScholarAgent.
 
-Each specialist agent (Scout, Reader, Critic, Scribe) extends SpecialistAgent
+Each specialist agent (Scout, Reader, Critic, Analyst, Synthesizer) extends SpecialistAgent
 and provides its own name, system prompt, and optional custom tools.
 
 The core loop follows the RLM pattern:
@@ -142,16 +142,3 @@ class SpecialistAgent(ABC):
             success=False,
         )
 
-    def _format_messages(self, messages: list[dict[str, str]]) -> str:
-        """Format message list into a single prompt string for the LLM."""
-        parts = []
-        for msg in messages:
-            role = msg["role"]
-            content = msg["content"]
-            if role == "system":
-                parts.append(f"[System]\n{content}")
-            elif role == "user":
-                parts.append(f"[User]\n{content}")
-            elif role == "assistant":
-                parts.append(f"[Assistant]\n{content}")
-        return "\n\n".join(parts)

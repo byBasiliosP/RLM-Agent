@@ -272,12 +272,14 @@ class LocalREPL(BaseEnv):
             return f"Error: LM query failed - {e}"
 
     def _call_agent(self, name: str, task: str) -> str:
-        """Dispatch a sub-agent call.
+        """Default stub for sub-agent dispatch.
 
-        Placeholder - will be wired up by the Dispatcher in a later task.
+        The Dispatcher overrides this in the REPL globals at runtime.
+        Raises NotImplementedError if called without a Dispatcher context.
         """
         raise NotImplementedError(
-            "call_agent is not yet wired up. It will be available when the Dispatcher is implemented."
+            "call_agent requires a Dispatcher context. "
+            "Run agents through Dispatcher.run() to enable sub-agent calls."
         )
 
     # --------------------------------------------------------------------- #
