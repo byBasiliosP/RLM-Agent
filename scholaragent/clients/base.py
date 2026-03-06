@@ -30,6 +30,8 @@ class BaseLM(ABC):
         self.timeout = timeout
         self.max_tokens = max_tokens
         self.rate_limiter = rate_limiter
+        self._cumulative_usage: dict[str, ModelUsageSummary] = {}
+        self._last_usage = ModelUsageSummary(prompt_tokens=0, completion_tokens=0, total_tokens=0)
 
     @abstractmethod
     def completion(self, prompt: str) -> str:
@@ -61,12 +63,32 @@ class BaseLM(ABC):
                 parts.append(f"[Assistant]\n{content}")
         return self.completion("\n\n".join(parts))
 
-    @abstractmethod
+    def _record_usage_tokens(self, prompt_tokens: int, completion_tokens: int) -> None:
+        """Update tracked token counts from extracted values."""
+        total_tokens = prompt_tokens + completion_tokens
+        self._last_usage = ModelUsageSummary(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+        )
+        if self.model_name in self._cumulative_usage:
+            prev = self._cumulative_usage[self.model_name]
+            self._cumulative_usage[self.model_name] = ModelUsageSummary(
+                prompt_tokens=prev.prompt_tokens + prompt_tokens,
+                completion_tokens=prev.completion_tokens + completion_tokens,
+                total_tokens=prev.total_tokens + total_tokens,
+            )
+        else:
+            self._cumulative_usage[self.model_name] = ModelUsageSummary(
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+            )
+
     def get_usage_summary(self) -> UsageSummary:
         """Get cumulative usage summary for all calls made by this client."""
-        ...
+        return UsageSummary(model_usage_summaries=dict(self._cumulative_usage))
 
-    @abstractmethod
     def get_last_usage(self) -> ModelUsageSummary:
         """Get the usage summary from the most recent call."""
-        ...
+        return self._last_usage

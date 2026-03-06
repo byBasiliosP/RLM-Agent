@@ -7,7 +7,6 @@ import anthropic
 from typing import TYPE_CHECKING
 
 from scholaragent.clients.base import BaseLM
-from scholaragent.core.types import ModelUsageSummary, UsageSummary
 
 if TYPE_CHECKING:
     from scholaragent.clients.rate_limiter import RateLimiter
@@ -15,6 +14,8 @@ if TYPE_CHECKING:
 
 class AnthropicClient(BaseLM):
     """Wraps the Anthropic Python SDK for sync and async completions."""
+
+    DEFAULT_MAX_TOKENS = 4096
 
     def __init__(
         self,
@@ -31,10 +32,6 @@ class AnthropicClient(BaseLM):
         self._async_client = anthropic.AsyncAnthropic(
             api_key=api_key, timeout=self.timeout
         )
-        self._cumulative_usage: dict[str, ModelUsageSummary] = {}
-        self._last_usage = ModelUsageSummary(
-            prompt_tokens=0, completion_tokens=0, total_tokens=0
-        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -43,29 +40,10 @@ class AnthropicClient(BaseLM):
         """Update tracked token counts from an API response usage object."""
         if usage is None:
             return
-        prompt_tokens = getattr(usage, "input_tokens", 0) or 0
-        completion_tokens = getattr(usage, "output_tokens", 0) or 0
-        total_tokens = prompt_tokens + completion_tokens
-
-        self._last_usage = ModelUsageSummary(
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
+        self._record_usage_tokens(
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
         )
-
-        if self.model_name in self._cumulative_usage:
-            prev = self._cumulative_usage[self.model_name]
-            self._cumulative_usage[self.model_name] = ModelUsageSummary(
-                prompt_tokens=prev.prompt_tokens + prompt_tokens,
-                completion_tokens=prev.completion_tokens + completion_tokens,
-                total_tokens=prev.total_tokens + total_tokens,
-            )
-        else:
-            self._cumulative_usage[self.model_name] = ModelUsageSummary(
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -75,7 +53,7 @@ class AnthropicClient(BaseLM):
             self.rate_limiter.wait_if_needed()
         response = self._sync_client.messages.create(
             model=self.model_name,
-            max_tokens=self.max_tokens or 4096,
+            max_tokens=self.max_tokens or self.DEFAULT_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
         self._record_usage(response.usage)
@@ -95,7 +73,7 @@ class AnthropicClient(BaseLM):
                 api_messages.append(msg)
         kwargs: dict = {
             "model": self.model_name,
-            "max_tokens": self.max_tokens or 4096,
+            "max_tokens": self.max_tokens or self.DEFAULT_MAX_TOKENS,
             "messages": api_messages,
         }
         if system_msg:
@@ -111,16 +89,10 @@ class AnthropicClient(BaseLM):
             self.rate_limiter.wait_if_needed()
         response = await self._async_client.messages.create(
             model=self.model_name,
-            max_tokens=self.max_tokens or 4096,
+            max_tokens=self.max_tokens or self.DEFAULT_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
         )
         self._record_usage(response.usage)
         if self.rate_limiter:
             self.rate_limiter.record_tokens(self._last_usage.total_tokens)
         return response.content[0].text if response.content else ""
-
-    def get_usage_summary(self) -> UsageSummary:
-        return UsageSummary(model_usage_summaries=dict(self._cumulative_usage))
-
-    def get_last_usage(self) -> ModelUsageSummary:
-        return self._last_usage

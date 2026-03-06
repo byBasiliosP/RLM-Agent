@@ -22,8 +22,13 @@ class TestBaseLM:
         abstract_methods = BaseLM.__abstractmethods__
         assert "completion" in abstract_methods
         assert "acompletion" in abstract_methods
-        assert "get_usage_summary" in abstract_methods
-        assert "get_last_usage" in abstract_methods
+
+    def test_has_concrete_usage_methods(self):
+        """get_usage_summary and get_last_usage are now concrete in BaseLM."""
+        assert hasattr(BaseLM, "get_usage_summary")
+        assert hasattr(BaseLM, "get_last_usage")
+        assert "get_usage_summary" not in BaseLM.__abstractmethods__
+        assert "get_last_usage" not in BaseLM.__abstractmethods__
 
 
 # ---------------------------------------------------------------------------
