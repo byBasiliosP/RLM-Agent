@@ -8,6 +8,8 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
+from scholaragent.utils.retry import retry_with_backoff
+
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
 
@@ -78,7 +80,15 @@ def search_arxiv(query: str, max_results: int = 10) -> str:
     }
 
     try:
-        response = httpx.get(ARXIV_API_URL, params=params, timeout=30.0)
+        response = retry_with_backoff(
+            httpx.get,
+            ARXIV_API_URL,
+            params=params,
+            timeout=30.0,
+            max_retries=2,
+            base_delay=3.0,
+            retryable_exceptions=(httpx.HTTPError,),
+        )
         response.raise_for_status()
     except Exception as e:
         return json.dumps({"error": str(e)})
