@@ -2,6 +2,7 @@
 
 import json
 import sqlite3
+import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -15,75 +16,82 @@ class MemoryStore:
     def __init__(self, db_path: str, embeddings: EmbeddingBackend):
         self.db_path = db_path
         self.embeddings = embeddings
-        self._conn = sqlite3.connect(db_path)
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.row_factory = sqlite3.Row
         self._create_tables()
 
     def _create_tables(self) -> None:
-        self._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS entries (
-                id TEXT PRIMARY KEY,
-                content TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                source_type TEXT NOT NULL,
-                source_ref TEXT NOT NULL,
-                tags TEXT NOT NULL,
-                embedding BLOB,
-                created_at TEXT NOT NULL,
-                access_count INTEGER DEFAULT 0
-            );
-            CREATE TABLE IF NOT EXISTS research_log (
-                id TEXT PRIMARY KEY,
-                query TEXT NOT NULL,
-                depth TEXT NOT NULL,
-                focus TEXT NOT NULL,
-                result_count INTEGER NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source_type);
-            CREATE INDEX IF NOT EXISTS idx_research_created ON research_log(created_at);
-        """)
-        self._conn.commit()
+        with self._lock:
+            self._conn.executescript("""
+                CREATE TABLE IF NOT EXISTS entries (
+                    id TEXT PRIMARY KEY,
+                    content TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_ref TEXT NOT NULL,
+                    tags TEXT NOT NULL,
+                    embedding BLOB,
+                    created_at TEXT NOT NULL,
+                    access_count INTEGER DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS research_log (
+                    id TEXT PRIMARY KEY,
+                    query TEXT NOT NULL,
+                    depth TEXT NOT NULL,
+                    focus TEXT NOT NULL,
+                    result_count INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source_type);
+                CREATE INDEX IF NOT EXISTS idx_research_created ON research_log(created_at);
+            """)
+            self._conn.commit()
 
     def add(self, entry: MemoryEntry) -> None:
         """Add a memory entry, computing embedding if not present."""
         if not entry.embedding:
             entry.embedding = self.embeddings.embed(entry.content)
-        self._conn.execute(
-            """INSERT OR REPLACE INTO entries
-               (id, content, summary, source_type, source_ref, tags, embedding, created_at, access_count)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                entry.id,
-                entry.content,
-                entry.summary,
-                entry.source_type,
-                entry.source_ref,
-                json.dumps(entry.tags),
-                json.dumps(entry.embedding),
-                entry.created_at,
-                entry.access_count,
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO entries
+                   (id, content, summary, source_type, source_ref, tags, embedding, created_at, access_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    entry.id,
+                    entry.content,
+                    entry.summary,
+                    entry.source_type,
+                    entry.source_ref,
+                    json.dumps(entry.tags),
+                    json.dumps(entry.embedding),
+                    entry.created_at,
+                    entry.access_count,
+                ),
+            )
+            self._conn.commit()
 
     def get(self, entry_id: str) -> MemoryEntry | None:
         """Retrieve a single entry by ID."""
-        row = self._conn.execute(
-            "SELECT * FROM entries WHERE id = ?", (entry_id,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM entries WHERE id = ?", (entry_id,)
+            ).fetchone()
         if row is None:
             return None
         return self._row_to_entry(row)
 
     def delete(self, entry_id: str) -> None:
         """Delete a single entry by ID."""
-        self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+            self._conn.commit()
 
     def count(self) -> int:
         """Count total entries."""
-        row = self._conn.execute("SELECT COUNT(*) FROM entries").fetchone()
+        with self._lock:
+            row = self._conn.execute("SELECT COUNT(*) FROM entries").fetchone()
         return row[0]
 
     def search(
@@ -95,14 +103,15 @@ class MemoryStore:
         """Semantic search over all entries. Returns (entry, score) pairs."""
         query_embedding = self.embeddings.embed(query)
 
-        if sources:
-            placeholders = ",".join("?" for _ in sources)
-            rows = self._conn.execute(
-                f"SELECT * FROM entries WHERE source_type IN ({placeholders})",
-                sources,
-            ).fetchall()
-        else:
-            rows = self._conn.execute("SELECT * FROM entries").fetchall()
+        with self._lock:
+            if sources:
+                placeholders = ",".join("?" for _ in sources)
+                rows = self._conn.execute(
+                    f"SELECT * FROM entries WHERE source_type IN ({placeholders})",
+                    sources,
+                ).fetchall()
+            else:
+                rows = self._conn.execute("SELECT * FROM entries").fetchall()
 
         if not rows:
             return []
@@ -116,12 +125,13 @@ class MemoryStore:
         scored.sort(key=lambda x: x[1], reverse=True)
 
         results = scored[:max_results]
-        for entry, _ in results:
-            self._conn.execute(
-                "UPDATE entries SET access_count = access_count + 1 WHERE id = ?",
-                (entry.id,),
-            )
-        self._conn.commit()
+        with self._lock:
+            for entry, _ in results:
+                self._conn.execute(
+                    "UPDATE entries SET access_count = access_count + 1 WHERE id = ?",
+                    (entry.id,),
+                )
+            self._conn.commit()
 
         return results
 
@@ -147,19 +157,20 @@ class MemoryStore:
         log_entry = ResearchLogEntry(
             query=query, depth=depth, focus=focus, result_count=result_count
         )
-        self._conn.execute(
-            """INSERT INTO research_log (id, query, depth, focus, result_count, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                log_entry.id,
-                log_entry.query,
-                log_entry.depth,
-                log_entry.focus,
-                log_entry.result_count,
-                log_entry.created_at,
-            ),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO research_log (id, query, depth, focus, result_count, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    log_entry.id,
+                    log_entry.query,
+                    log_entry.depth,
+                    log_entry.focus,
+                    log_entry.result_count,
+                    log_entry.created_at,
+                ),
+            )
+            self._conn.commit()
 
     def get_recent_research(
         self, query: str, days: int = 7
@@ -168,10 +179,11 @@ class MemoryStore:
         cutoff = (
             datetime.now(timezone.utc) - timedelta(days=days)
         ).isoformat()
-        rows = self._conn.execute(
-            "SELECT * FROM research_log WHERE created_at >= ? ORDER BY created_at DESC",
-            (cutoff,),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM research_log WHERE created_at >= ? ORDER BY created_at DESC",
+                (cutoff,),
+            ).fetchall()
 
         query_lower = query.lower()
         results = []
@@ -190,15 +202,16 @@ class MemoryStore:
     def status(self) -> dict:
         """Return memory stats."""
         total = self.count()
-        by_source = {}
-        for row in self._conn.execute(
-            "SELECT source_type, COUNT(*) as cnt FROM entries GROUP BY source_type"
-        ).fetchall():
-            by_source[row["source_type"]] = row["cnt"]
+        with self._lock:
+            by_source = {}
+            for row in self._conn.execute(
+                "SELECT source_type, COUNT(*) as cnt FROM entries GROUP BY source_type"
+            ).fetchall():
+                by_source[row["source_type"]] = row["cnt"]
 
-        research_count = self._conn.execute(
-            "SELECT COUNT(*) FROM research_log"
-        ).fetchone()[0]
+            research_count = self._conn.execute(
+                "SELECT COUNT(*) FROM research_log"
+            ).fetchone()[0]
 
         return {
             "total_entries": total,
@@ -209,7 +222,8 @@ class MemoryStore:
 
     def close(self) -> None:
         """Close the database connection."""
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def _row_to_entry(self, row: sqlite3.Row) -> MemoryEntry:
         return MemoryEntry(

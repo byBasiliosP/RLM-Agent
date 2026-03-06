@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import threading
 
 import pytest
 from unittest.mock import MagicMock
@@ -208,3 +209,68 @@ class TestMemoryStoreStatus:
         status = store.status()
         assert status["total_entries"] == 1
         assert "paper" in status["entries_by_source"]
+
+
+class TestMemoryStoreConcurrency:
+    def test_concurrent_writes(self, store):
+        """10 threads each add an entry simultaneously; all 10 must be stored."""
+        from scholaragent.memory.types import MemoryEntry
+
+        errors = []
+
+        def _add(i):
+            try:
+                store.add(MemoryEntry(
+                    content=f"Concurrent entry {i}",
+                    summary=f"Summary {i}",
+                    source_type="paper",
+                    source_ref=f"ref-{i}",
+                    tags=["concurrent"],
+                ))
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_add, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Concurrent writes raised errors: {errors}"
+        assert store.count() == 10
+
+    def test_concurrent_read_and_write(self, store):
+        """One thread adds entries while another searches; no crashes."""
+        from scholaragent.memory.types import MemoryEntry
+
+        errors = []
+
+        def _writer():
+            try:
+                for i in range(10):
+                    store.add(MemoryEntry(
+                        content=f"Writer entry {i}",
+                        summary=f"Summary {i}",
+                        source_type="paper",
+                        source_ref=f"ref-w-{i}",
+                        tags=["write"],
+                    ))
+            except Exception as exc:
+                errors.append(exc)
+
+        def _reader():
+            try:
+                for _ in range(10):
+                    store.search("writer entry", max_results=5)
+            except Exception as exc:
+                errors.append(exc)
+
+        writer = threading.Thread(target=_writer)
+        reader = threading.Thread(target=_reader)
+        writer.start()
+        reader.start()
+        writer.join()
+        reader.join()
+
+        assert errors == [], f"Concurrent read/write raised errors: {errors}"
+        assert store.count() == 10
