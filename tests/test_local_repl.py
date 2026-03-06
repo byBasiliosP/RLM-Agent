@@ -259,9 +259,9 @@ class TestLocalREPLShowProgress:
 class TestLocalREPLSafeBuiltins:
     """Tests for safe builtins."""
 
-    def test_import_works(self):
+    def test_preinjected_json_works(self):
         repl = LocalREPL()
-        result = repl.execute_code("import json\nprint(json.dumps({'a': 1}))")
+        result = repl.execute_code("x = json.dumps({'a': 1})\nprint(x)")
         assert result.error is None
         assert '{"a": 1}' in result.output
 
@@ -288,3 +288,41 @@ class TestBaseEnvInterface:
         assert hasattr(repl, "setup")
         assert hasattr(repl, "load_context")
         assert hasattr(repl, "execute_code")
+
+
+class TestLocalREPLSandboxSecurity:
+    """Tests that dangerous builtins are blocked and safe modules are available."""
+
+    def test_import_os_blocked(self):
+        repl = LocalREPL()
+        result = repl.execute_code("import os")
+        assert result.error is not None
+
+    def test_import_subprocess_blocked(self):
+        repl = LocalREPL()
+        result = repl.execute_code("import subprocess")
+        assert result.error is not None
+
+    def test_open_blocked(self):
+        repl = LocalREPL()
+        result = repl.execute_code("open('somefile')")
+        assert result.error is not None
+        assert "TypeError" in result.error
+
+    def test_preinjected_json_dumps(self):
+        repl = LocalREPL()
+        result = repl.execute_code("print(json.dumps({'a': 1}))")
+        assert result.error is None
+        assert '{"a": 1}' in result.output
+
+    def test_preinjected_re_findall(self):
+        repl = LocalREPL()
+        result = repl.execute_code(r"print(re.findall(r'\d+', 'abc123'))")
+        assert result.error is None
+        assert "123" in result.output
+
+    def test_preinjected_math_sqrt(self):
+        repl = LocalREPL()
+        result = repl.execute_code("print(math.sqrt(16))")
+        assert result.error is None
+        assert "4.0" in result.output

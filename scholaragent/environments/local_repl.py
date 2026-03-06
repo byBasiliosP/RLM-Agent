@@ -6,9 +6,17 @@ LLM query functions, and scaffold restoration to protect reserved names.
 Adapted from RLM's LocalREPL pattern.
 """
 
+import collections
+import datetime
+import functools
 import io
+import itertools
 import json
+import math
+import re
+import statistics
 import sys
+import textwrap
 import threading
 from typing import Any
 
@@ -79,8 +87,7 @@ _SAFE_BUILTINS: dict[str, Any] = {
     "property": property,
     "staticmethod": staticmethod,
     "classmethod": classmethod,
-    "__import__": __import__,
-    "open": open,
+    "open": None,
     # Exceptions
     "Exception": Exception,
     "BaseException": BaseException,
@@ -108,6 +115,19 @@ _SAFE_BUILTINS: dict[str, Any] = {
     "compile": None,
     "globals": None,
     "locals": None,
+}
+
+# Pre-imported safe modules available in the REPL without __import__
+_SAFE_MODULES: dict[str, Any] = {
+    "json": json,
+    "re": re,
+    "math": math,
+    "collections": collections,
+    "itertools": itertools,
+    "functools": functools,
+    "statistics": statistics,
+    "textwrap": textwrap,
+    "datetime": datetime,
 }
 
 
@@ -172,6 +192,10 @@ class LocalREPL(BaseEnv):
 
         # Internal state for FINAL_VAR
         self._last_final_answer: str | None = None
+
+        # Inject pre-imported safe modules
+        for name, module in _SAFE_MODULES.items():
+            self.globals[name] = module
 
         # Inject scaffold functions into globals
         self.globals["FINAL"] = self._final_var  # alias — LLMs often use FINAL() instead of FINAL_VAR()
