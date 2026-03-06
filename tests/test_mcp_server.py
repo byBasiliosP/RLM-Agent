@@ -1,7 +1,6 @@
 """Tests for the MCP server tool definitions."""
 
 import os
-import tempfile
 
 import pytest
 from unittest.mock import patch, MagicMock

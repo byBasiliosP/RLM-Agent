@@ -16,6 +16,8 @@ from scholaragent.sources.github import search_github_code
 from scholaragent.sources.docs import search_docs
 
 
+MAX_SUMMARY_LENGTH = 200
+
 FOCUS_HINTS = {
     "implementation": "Focus on code examples, API usage, how-to guides, and practical patterns.",
     "theory": "Focus on concepts, algorithms, mathematical foundations, and trade-offs.",
@@ -60,8 +62,8 @@ class ResearchPipeline:
         # For quick depth, just index raw results
         entries_added = 0
         for raw in raw_results:
-            focus_hint = FOCUS_HINTS.get(focus, "")
-            summary = raw["content"][:200]
+            # TODO: use focus_hint for depth-level aware summarization
+            summary = raw["content"][:MAX_SUMMARY_LENGTH]
             entry = MemoryEntry(
                 content=raw["content"],
                 summary=summary,

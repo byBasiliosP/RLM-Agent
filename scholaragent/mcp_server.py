@@ -29,6 +29,11 @@ from scholaragent.memory.embeddings import OpenAIEmbeddings
 from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.research import ResearchPipeline
 
+# --- Validation constants ---
+
+VALID_DEPTHS = frozenset({"quick", "normal", "deep"})
+VALID_FOCUSES = frozenset({"implementation", "theory", "comparison"})
+
 # --- Global state ---
 
 _store: MemoryStore | None = None
@@ -76,6 +81,8 @@ def _memory_lookup(
     sources: list[str] | None = None,
     max_results: int = 5,
 ) -> dict:
+    if not 1 <= max_results <= 50:
+        return {"error": "max_results must be between 1 and 50"}
     results = store.search(query, max_results=max_results, sources=sources)
     return {
         "results": [
@@ -93,6 +100,10 @@ def _memory_research(
     depth: str = "normal",
     focus: str = "implementation",
 ) -> dict:
+    if depth not in VALID_DEPTHS:
+        return {"error": f"depth must be one of {sorted(VALID_DEPTHS)}"}
+    if focus not in VALID_FOCUSES:
+        return {"error": f"focus must be one of {sorted(VALID_FOCUSES)}"}
     return pipeline.run(query=query, depth=depth, focus=focus)
 
 
@@ -102,6 +113,8 @@ def _memory_store(
     source: str,
     tags: list[str],
 ) -> dict:
+    if not content or not content.strip():
+        return {"error": "content must be non-empty"}
     from scholaragent.memory.types import MemoryEntry
 
     # Infer source_type from source string

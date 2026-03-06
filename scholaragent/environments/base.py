@@ -36,7 +36,7 @@ class BaseEnv(ABC):
         ...
 
     @abstractmethod
-    def load_context(self, context: str) -> None:
+    def load_context(self, context: str | dict | list) -> None:
         """Load context data into the environment."""
         ...
 

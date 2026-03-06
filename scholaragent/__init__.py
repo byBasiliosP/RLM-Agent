@@ -2,6 +2,15 @@
 
 __version__ = "0.2.0"
 
+__all__ = [
+    "ScholarAgent",
+    "ModelConfig",
+    "ModelRouter",
+    "Dispatcher",
+    "AgentResult",
+    "ResearchReport",
+]
+
 from scholaragent.clients.router import ModelConfig, ModelRouter
 from scholaragent.clients.token_counter import TokenCounter
 from scholaragent.core.registry import AgentRegistry

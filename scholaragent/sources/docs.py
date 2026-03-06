@@ -8,6 +8,9 @@ import re
 import httpx
 
 
+MAX_DOC_CONTENT_LENGTH = 10_000
+
+
 def _html_to_text(html: str) -> str:
     """Simple HTML to text conversion. Strips tags, normalizes whitespace."""
     text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE)
@@ -35,7 +38,7 @@ def fetch_docs(url: str, timeout: float = 30.0) -> list[dict]:
         return []
 
     return [{
-        "content": text[:10000],
+        "content": text[:MAX_DOC_CONTENT_LENGTH],
         "source_type": "docs",
         "source_ref": url,
     }]
