@@ -112,6 +112,92 @@ class TestGitHubCodeSearch:
         assert "language:python" in call_args[1]["params"]["q"]
 
 
+class TestHtmlToText:
+    def test_strips_script_tags(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        html = "<html><script>alert('xss')</script><p>hello</p></html>"
+        assert "alert" not in _html_to_text(html)
+        assert "hello" in _html_to_text(html)
+
+    def test_strips_style_tags(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        html = "<style>.x { color: red; }</style><p>content</p>"
+        assert "color" not in _html_to_text(html)
+        assert "content" in _html_to_text(html)
+
+    def test_decodes_html_entities(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        html = "<p>a &amp; b &lt; c &gt; d &quot;e&quot; f&nbsp;g</p>"
+        text = _html_to_text(html)
+        assert "a & b" in text
+        assert "< c >" in text
+        assert '"e"' in text
+
+    def test_collapses_whitespace(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        html = "<p>  hello   \n\n   world  </p>"
+        text = _html_to_text(html)
+        assert text == "hello world"
+
+    def test_empty_html(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        assert _html_to_text("") == ""
+
+    def test_no_tags(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        assert _html_to_text("plain text") == "plain text"
+
+    def test_nested_tags(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        html = "<div><p><span>deep</span></p></div>"
+        assert _html_to_text(html) == "deep"
+
+    def test_case_insensitive_script_removal(self):
+        from scholaragent.sources.docs import _html_to_text
+
+        html = "<SCRIPT>bad()</SCRIPT><p>good</p>"
+        text = _html_to_text(html)
+        assert "bad" not in text
+        assert "good" in text
+
+
+class TestFetchDocsEdgeCases:
+    @patch("scholaragent.sources.docs._http_client")
+    def test_truncates_long_content(self, mock_client):
+        """Content should be truncated to MAX_DOC_CONTENT_LENGTH."""
+        from scholaragent.sources.docs import fetch_docs, MAX_DOC_CONTENT_LENGTH
+
+        long_html = "<p>" + "a" * 20_000 + "</p>"
+        mock_response = MagicMock()
+        mock_response.text = long_html
+        mock_response.raise_for_status = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        result = fetch_docs("http://example.com")
+        assert len(result) == 1
+        assert len(result[0]["content"]) == MAX_DOC_CONTENT_LENGTH
+
+    @patch("scholaragent.sources.docs._http_client")
+    def test_empty_html_returns_empty_list(self, mock_client):
+        """HTML with no text content should return empty list."""
+        from scholaragent.sources.docs import fetch_docs
+
+        mock_response = MagicMock()
+        mock_response.text = "<html><body></body></html>"
+        mock_response.raise_for_status = MagicMock()
+        mock_client.get.return_value = mock_response
+
+        result = fetch_docs("http://example.com")
+        assert result == []
+
+
 class TestConnectionPooling:
     def test_github_uses_shared_client(self):
         import scholaragent.sources.github as mod
