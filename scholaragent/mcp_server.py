@@ -21,6 +21,7 @@ Configuration for coding agents:
 import atexit
 import json
 import os
+import threading
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -38,6 +39,7 @@ VALID_FOCUSES = frozenset({"implementation", "theory", "comparison"})
 
 _store: MemoryStore | None = None
 _pipeline: ResearchPipeline | None = None
+_init_lock = threading.Lock()
 
 DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
 DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
@@ -55,21 +57,29 @@ atexit.register(_cleanup)
 
 
 def _get_store() -> MemoryStore:
-    """Lazy-init the global memory store."""
+    """Lazy-init the global memory store (thread-safe)."""
     global _store
-    if _store is None:
+    if _store is not None:
+        return _store
+    with _init_lock:
+        if _store is not None:
+            return _store
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         embeddings = OpenAIEmbeddings()
         _store = MemoryStore(db_path=DB_PATH, embeddings=embeddings)
-    return _store
+        return _store
 
 
 def _get_pipeline() -> ResearchPipeline:
-    """Lazy-init the research pipeline."""
+    """Lazy-init the research pipeline (thread-safe)."""
     global _pipeline
-    if _pipeline is None:
+    if _pipeline is not None:
+        return _pipeline
+    with _init_lock:
+        if _pipeline is not None:
+            return _pipeline
         _pipeline = ResearchPipeline(store=_get_store())
-    return _pipeline
+        return _pipeline
 
 
 # --- Tool handler functions (testable without MCP transport) ---

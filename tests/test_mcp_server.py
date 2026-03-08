@@ -2,6 +2,7 @@
 
 import json
 import os
+import threading
 
 import pytest
 from unittest.mock import patch, MagicMock
@@ -442,3 +443,33 @@ class TestMCPValidationConstants:
         from scholaragent.mcp_server import VALID_FOCUSES
 
         assert isinstance(VALID_FOCUSES, frozenset)
+
+
+class TestMCPThreadSafety:
+    """Verify lazy singletons are thread-safe."""
+
+    def test_concurrent_get_store_returns_same_instance(self, tmp_path, monkeypatch):
+        """Multiple threads calling _get_store() must get the same instance."""
+        import scholaragent.mcp_server as mod
+
+        monkeypatch.setattr(mod, "_store", None)
+        monkeypatch.setattr(mod, "_pipeline", None)
+        monkeypatch.setattr(mod, "DB_PATH", str(tmp_path / "test.db"))
+        monkeypatch.setattr(mod, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(mod, "OpenAIEmbeddings", lambda: FakeEmbeddings())
+
+        stores = []
+        barrier = threading.Barrier(4)
+
+        def grab():
+            barrier.wait()
+            stores.append(mod._get_store())
+
+        threads = [threading.Thread(target=grab) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(stores) == 4
+        assert all(s is stores[0] for s in stores)
