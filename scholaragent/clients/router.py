@@ -13,9 +13,10 @@ CHEAP_ROLES: frozenset[str] = frozenset({"scout"})
 class ModelConfig:
     """Identifies a specific model on a specific backend."""
 
-    backend: str  # "openai" or "anthropic"
+    backend: str  # "openai", "anthropic", or "lmstudio"
     model_name: str
     max_tokens: int | None = None
+    base_url: str | None = None
 
 
 class ModelRouter:
@@ -46,14 +47,23 @@ class ModelRouter:
         if config.backend == "openai":
             from scholaragent.clients.openai_client import OpenAIClient
 
+            if config.base_url:
+                kwargs["base_url"] = config.base_url
             client = OpenAIClient(**kwargs)
         elif config.backend == "anthropic":
             from scholaragent.clients.anthropic_client import AnthropicClient
 
             client = AnthropicClient(**kwargs)
+        elif config.backend == "lmstudio":
+            from scholaragent.clients.openai_client import OpenAIClient
+
+            kwargs["base_url"] = config.base_url or "http://localhost:1234/v1"
+            kwargs["api_key"] = "lm-studio"
+            client = OpenAIClient(**kwargs)
         else:
             raise ValueError(f"Unknown backend: {config.backend}")
 
-        if config.backend in PROVIDER_DEFAULTS:
-            client.rate_limiter = RateLimiter(**PROVIDER_DEFAULTS[config.backend])
+        backend_key = "lmstudio" if config.backend == "lmstudio" else config.backend
+        if backend_key in PROVIDER_DEFAULTS:
+            client.rate_limiter = RateLimiter(**PROVIDER_DEFAULTS[backend_key])
         return client

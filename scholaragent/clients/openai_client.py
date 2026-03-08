@@ -21,16 +21,17 @@ class OpenAIClient(BaseLM):
         self,
         model_name: str,
         api_key: str | None = None,
+        base_url: str | None = None,
         timeout: float = 120.0,
         max_tokens: int | None = None,
         rate_limiter: "RateLimiter | None" = None,
     ):
         super().__init__(model_name, timeout=timeout, max_tokens=max_tokens, rate_limiter=rate_limiter)
         self._sync_client = openai.OpenAI(
-            api_key=api_key, timeout=httpx.Timeout(self.timeout)
+            api_key=api_key, base_url=base_url, timeout=httpx.Timeout(self.timeout)
         )
         self._async_client = openai.AsyncOpenAI(
-            api_key=api_key, timeout=httpx.Timeout(self.timeout)
+            api_key=api_key, base_url=base_url, timeout=httpx.Timeout(self.timeout)
         )
 
     # ------------------------------------------------------------------

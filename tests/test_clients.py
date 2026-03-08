@@ -482,3 +482,82 @@ class TestClientErrorHandling:
         result = client.completion("test")
         assert result == "ok"
         assert call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# 10. LM Studio backend support
+# ---------------------------------------------------------------------------
+class TestLMStudioBackend:
+    def test_model_config_base_url(self):
+        cfg = ModelConfig(backend="lmstudio", model_name="llama-3.2-3b-instruct")
+        assert cfg.base_url is None
+
+    def test_model_config_custom_base_url(self):
+        cfg = ModelConfig(
+            backend="lmstudio",
+            model_name="llama-3.2-3b-instruct",
+            base_url="http://localhost:5000/v1",
+        )
+        assert cfg.base_url == "http://localhost:5000/v1"
+
+    def test_openai_client_accepts_base_url(self):
+        with patch("scholaragent.clients.openai_client.openai") as mock_openai:
+            client = OpenAIClient(
+                model_name="test-model",
+                api_key="fake",
+                base_url="http://localhost:1234/v1",
+            )
+        mock_openai.OpenAI.assert_called_once()
+        call_kwargs = mock_openai.OpenAI.call_args[1]
+        assert call_kwargs["base_url"] == "http://localhost:1234/v1"
+        assert call_kwargs["api_key"] == "fake"
+
+    def test_router_creates_lmstudio_client(self):
+        router = ModelRouter(
+            strong=ModelConfig(backend="lmstudio", model_name="kimi-dev-72b"),
+            cheap=ModelConfig(backend="lmstudio", model_name="llama-3.2-3b-instruct"),
+        )
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = router.get_client("analyst")
+        assert isinstance(client, OpenAIClient)
+        assert client.model_name == "kimi-dev-72b"
+
+    def test_router_lmstudio_default_base_url(self):
+        router = ModelRouter(
+            strong=ModelConfig(backend="lmstudio", model_name="test-model"),
+            cheap=ModelConfig(backend="lmstudio", model_name="test-model"),
+        )
+        with patch("scholaragent.clients.openai_client.openai") as mock_openai:
+            router.get_client("analyst")
+        call_kwargs = mock_openai.OpenAI.call_args[1]
+        assert call_kwargs["base_url"] == "http://localhost:1234/v1"
+        assert call_kwargs["api_key"] == "lm-studio"
+
+    def test_router_lmstudio_custom_base_url(self):
+        router = ModelRouter(
+            strong=ModelConfig(
+                backend="lmstudio",
+                model_name="test-model",
+                base_url="http://192.168.1.100:1234/v1",
+            ),
+            cheap=ModelConfig(backend="lmstudio", model_name="test-model"),
+        )
+        with patch("scholaragent.clients.openai_client.openai") as mock_openai:
+            router.get_client("analyst")
+        call_kwargs = mock_openai.OpenAI.call_args[1]
+        assert call_kwargs["base_url"] == "http://192.168.1.100:1234/v1"
+
+    def test_lmstudio_rate_limiter_defaults(self):
+        from scholaragent.clients.rate_limiter import PROVIDER_DEFAULTS, RateLimiter
+
+        assert "lmstudio" in PROVIDER_DEFAULTS
+        assert PROVIDER_DEFAULTS["lmstudio"]["rpm"] == 1000
+
+        router = ModelRouter(
+            strong=ModelConfig(backend="lmstudio", model_name="test-model"),
+            cheap=ModelConfig(backend="lmstudio", model_name="test-model"),
+        )
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = router.get_client("scout")
+        assert isinstance(client.rate_limiter, RateLimiter)
+        assert client.rate_limiter.rpm == 1000

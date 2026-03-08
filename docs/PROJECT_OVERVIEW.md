@@ -76,7 +76,7 @@ The multi-agent architecture draws from the growing body of research on LLM-base
 
 This decomposition has three advantages:
 
-1. **Model Routing.** Different tasks require different capability levels. The Scout agent (paper discovery) needs speed, not deep reasoning --- it runs on a cheap, fast model like `gpt-4.1-mini`. The Critic and Analyst agents need careful analytical reasoning and run on strong models like `gpt-4o` or `claude-sonnet-4-6`. This dual-model routing reduces cost by 40-60% compared to running everything on the strong model.
+1. **Model Routing.** Different tasks require different capability levels. The Scout agent (paper discovery) needs speed, not deep reasoning --- it runs on a cheap, fast model like `gpt-4.1-mini`. The Critic and Analyst agents need careful analytical reasoning and run on strong models like `gpt-4o` or `claude-sonnet-4-6`. This dual-model routing reduces cost by 40-60% compared to running everything on the strong model. The system supports three backends: **OpenAI**, **Anthropic**, and **LM Studio** (any OpenAI-compatible local inference server). LM Studio support enables zero-cost, fully-private research using local models.
 
 2. **Focused Prompts.** Each agent has a tightly scoped system prompt with a defined JSON output schema, scoring rubrics (Critic), extraction taxonomies (Reader), pattern definitions (Analyst), and structured output templates (Synthesizer). The Critic prompt defines 5-point rubrics for methodology and relevance scoring, a bias taxonomy (selection, confirmation, publication, funding, small sample), and reliability determination rules. The Synthesizer prompt specifies a 7-section markdown template with `[Author et al., Year]` citation format. Narrow, schema-driven prompts produce higher-quality, parseable outputs than broad "do everything" prompts.
 
@@ -247,11 +247,11 @@ The system supports three research depth levels and three focus modes, creating 
 
 ## 7. Current Status and Test Coverage
 
-The system has **334 passing tests** across 24 test files, covering:
+The system has **341 passing tests** across 24 test files, covering:
 
 - Core agent loop and REPL execution (28 tests)
 - REPL namespace isolation and scaffold immutability (12 tests)
-- LLM client wrappers, model routing, and retry logic (24 tests)
+- LLM client wrappers, model routing, LM Studio backend, and retry logic (31 tests)
 - Dispatcher orchestration (11 tests)
 - Paper search tools with connection pooling (13 tests)
 - Source adapters with connection pooling and logging (14 tests)

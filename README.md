@@ -88,6 +88,8 @@ Each agent runs an **RLM loop** (Reasoning via Language Models): generate Python
 
 The Scout agent uses a cheap/fast model (e.g. `gpt-4o-mini`) since it just searches. All other agents use a strong model (e.g. `claude-sonnet-4-6`) for analytical work.
 
+Supported backends: **OpenAI**, **Anthropic**, and **LM Studio** (any OpenAI-compatible local server).
+
 ### Memory Layer
 
 - **SQLite** database at `~/.scholaragent/memory.db`
@@ -120,6 +122,23 @@ agent = ScholarAgent(
 
 result = agent.research("What are the latest advances in RLHF?")
 print(result.result)  # Markdown literature review
+```
+
+### Using LM Studio (Local Models)
+
+Run entirely on local models with zero API cost:
+
+```python
+agent = ScholarAgent(
+    strong_model={"backend": "lmstudio", "model_name": "kimi-dev-72b"},
+    cheap_model={"backend": "lmstudio", "model_name": "llama-3.2-3b-instruct"},
+)
+```
+
+LM Studio must be running at `http://localhost:1234/v1` (default). For a custom URL:
+
+```python
+strong_model={"backend": "lmstudio", "model_name": "kimi-dev-72b", "base_url": "http://192.168.1.100:1234/v1"}
 ```
 
 ## Installation
@@ -178,9 +197,11 @@ Removes the MCP server entry from all detected agent configs.
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `OPENAI_API_KEY` | Yes | Embeddings + cheap model routing |
-| `ANTHROPIC_API_KEY` | Yes | Strong model for analysis agents |
+| `OPENAI_API_KEY` | Yes* | Embeddings + cheap model routing |
+| `ANTHROPIC_API_KEY` | Yes* | Strong model for analysis agents |
 | `GITHUB_TOKEN` | No | GitHub code search (higher rate limits) |
+
+*When using LM Studio for all agents, only `OPENAI_API_KEY` is required (for embeddings). `ANTHROPIC_API_KEY` is only needed if using the Anthropic backend.
 
 ## Project Structure
 
@@ -188,14 +209,14 @@ Removes the MCP server entry from all detected agent configs.
 scholaragent/
   agents/          # 5 specialist agents (scout, reader, critic, analyst, synthesizer)
   core/            # Orchestration (dispatcher, registry, handler, REPL, comms)
-  clients/         # LLM clients (OpenAI, Anthropic) + model router
+  clients/         # LLM clients (OpenAI, Anthropic, LM Studio) + model router
   memory/          # Persistent store (SQLite, embeddings, research pipeline)
   sources/         # Source adapters (GitHub code, documentation)
   tools/           # Search tools (arXiv, Semantic Scholar)
   environments/    # Sandboxed Python REPL
   utils/           # Parsing, prompts, budget tracking
   mcp_server.py    # FastMCP server (5 tools)
-tests/             # 334 tests
+tests/             # 341 tests
 examples/          # Usage examples
 install.sh         # One-command installer
 ```

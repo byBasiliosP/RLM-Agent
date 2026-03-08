@@ -9,6 +9,7 @@ from collections import deque
 PROVIDER_DEFAULTS: dict[str, dict[str, int]] = {
     "openai": {"rpm": 60, "tpm": 90_000},
     "anthropic": {"rpm": 50, "tpm": 80_000},
+    "lmstudio": {"rpm": 1000, "tpm": 1_000_000},
 }
 
 WINDOW_SECONDS = 60.0
