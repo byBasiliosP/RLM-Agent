@@ -1,5 +1,6 @@
 """Embedding backends for semantic search. Swappable: start with OpenAI API, replace with local model later."""
 from abc import ABC, abstractmethod
+import hashlib
 
 import numpy as np
 import openai
@@ -22,13 +23,24 @@ class EmbeddingBackend(ABC):
 
 
 class OpenAIEmbeddings(EmbeddingBackend):
-    def __init__(self, model: str = "text-embedding-3-small"):
+    def __init__(self, model: str = "text-embedding-3-small", cache_size: int = 512):
         self.model = model
         self._client = openai.OpenAI()
+        self._cache: dict[str, list[float]] = {}
+        self._cache_size = cache_size
 
     def embed(self, text: str) -> list[float]:
+        cache_key = hashlib.sha256(text.encode()).hexdigest()
+        if cache_key in self._cache:
+            return list(self._cache[cache_key])  # return copy
         response = self._client.embeddings.create(input=[text], model=self.model)
-        return response.data[0].embedding
+        result = response.data[0].embedding
+        if len(self._cache) >= self._cache_size:
+            # Evict oldest entry (FIFO)
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
+        self._cache[cache_key] = result
+        return list(result)  # return copy
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         response = self._client.embeddings.create(input=texts, model=self.model)
