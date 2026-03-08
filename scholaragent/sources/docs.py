@@ -3,9 +3,12 @@
 Fetches and extracts text content from web pages.
 """
 
+import logging
 import re
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _http_client = httpx.Client(timeout=30.0, follow_redirects=True)
 
@@ -31,7 +34,8 @@ def fetch_docs(url: str, timeout: float = 30.0) -> list[dict]:
     try:
         response = _http_client.get(url, timeout=timeout)
         response.raise_for_status()
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to fetch docs from %s: %s", url, e)
         return []
 
     text = _html_to_text(response.text)

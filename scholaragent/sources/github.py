@@ -1,8 +1,11 @@
 """GitHub code search source adapter."""
 
+import logging
 import os
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from scholaragent.utils.retry import retry_with_backoff
 
@@ -48,7 +51,8 @@ def search_github_code(
         )
         response.raise_for_status()
         data = response.json()
-    except Exception:
+    except Exception as e:
+        logger.warning("GitHub code search failed: %s", e)
         return []
 
     results = []

@@ -7,7 +7,10 @@ Handles depth levels:
 """
 
 import json
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logger = logging.getLogger(__name__)
 
 from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.types import MemoryEntry, ResearchLogEntry
@@ -150,6 +153,7 @@ class ResearchPipeline:
                     items = future.result(timeout=60)
                     results.extend(items)
                 except Exception as e:
+                    logger.warning("Source %s failed: %s", label, e)
                     errors.append(f"{label}: {type(e).__name__}: {e}")
 
         return results, errors

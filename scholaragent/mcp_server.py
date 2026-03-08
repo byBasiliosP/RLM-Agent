@@ -20,9 +20,12 @@ Configuration for coding agents:
 
 import atexit
 import json
+import logging
 import os
 import threading
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from mcp.server.fastmcp import FastMCP
 
@@ -67,6 +70,7 @@ def _get_store() -> MemoryStore:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         embeddings = OpenAIEmbeddings()
         _store = MemoryStore(db_path=DB_PATH, embeddings=embeddings)
+        logger.info("Initialized memory store at %s", DB_PATH)
         return _store
 
 
