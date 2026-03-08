@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+import time
 
 import pytest
 from unittest.mock import MagicMock, patch
@@ -144,3 +145,39 @@ class TestResearchPipeline:
             result = pipeline.run("test query", depth="quick")
             assert result["entries_added"] == 0
             assert len(result["errors"]) == 4
+
+
+class TestConcurrentCollection:
+    def test_sources_collected_concurrently(self, store, monkeypatch):
+        """Source adapters should run in parallel, not sequentially."""
+        def slow_arxiv(query, max_results=10):
+            time.sleep(0.2)
+            return "[]"
+
+        def slow_s2(query, limit=10):
+            time.sleep(0.2)
+            return "[]"
+
+        def slow_github(query, language=None, max_results=10):
+            time.sleep(0.2)
+            return []
+
+        def slow_docs(query, max_results=5):
+            time.sleep(0.2)
+            return []
+
+        import scholaragent.memory.research as mod
+        monkeypatch.setattr(mod, "search_arxiv", slow_arxiv)
+        monkeypatch.setattr(mod, "search_semantic_scholar", slow_s2)
+        monkeypatch.setattr(mod, "search_github_code", slow_github)
+        monkeypatch.setattr(mod, "search_docs", slow_docs)
+
+        from scholaragent.memory.research import ResearchPipeline
+        pipeline = ResearchPipeline(store=store)
+        t0 = time.monotonic()
+        pipeline._collect_sources("test query")
+        elapsed = time.monotonic() - t0
+
+        # 4 sources x 0.2s each = 0.8s sequential.
+        # Concurrent should complete in ~0.25s (0.2s + overhead).
+        assert elapsed < 0.5, f"Sources collected sequentially ({elapsed:.2f}s)"
