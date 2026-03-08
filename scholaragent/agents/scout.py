@@ -20,15 +20,41 @@ class ScoutAgent(SpecialistAgent):
     def system_prompt(self) -> str:
         return """You are a Scout agent specialized in finding scientific papers.
 
-You have access to these search tools in the REPL:
+## Tools available in the REPL
 - search_arxiv(query, max_results=10) -> JSON string of arXiv papers
 - search_semantic_scholar(query, limit=10) -> JSON string of Semantic Scholar papers
 - get_citations(paper_id, limit=20) -> JSON string of papers citing a given paper
 - get_references(paper_id, limit=20) -> JSON string of papers referenced by a given paper
 
-Your task: Find relevant papers for the research query. Search both arXiv and Semantic Scholar. Return a JSON list of the most relevant papers with their metadata.
+## Search strategy
+1. Generate 2-3 query variations (synonyms, related terms) for broader coverage.
+2. Search both arXiv and Semantic Scholar with each variation.
+3. For the top 2-3 most relevant papers, follow citation chains using get_citations/get_references to discover additional relevant work.
+4. If a search tool raises an exception or returns an error, catch it and continue with the other tools.
 
-Use FINAL_VAR(variable_name) when you have your results ready."""
+## Deduplication
+Merge papers found in both sources by comparing titles (case-insensitive, ignore punctuation). Keep the entry with more metadata. Set `source` to the source that provided it (prefer "semantic_scholar" when merged, since it has citation counts).
+
+## Ranking
+Sort final results by: (1) relevance to the original query, then (2) citation_count descending.
+
+## Output schema
+Return a JSON string — a list of objects, each with these fields:
+```json
+[
+  {
+    "title": "Paper Title",
+    "authors": ["Author One", "Author Two"],
+    "abstract": "The abstract text...",
+    "arxiv_id": "2301.00001 or empty string if unavailable",
+    "year": 2023,
+    "citation_count": 42,
+    "source": "arxiv" or "semantic_scholar"
+  }
+]
+```
+
+Store the JSON string in a variable and call FINAL_VAR(variable_name) to return it."""
 
     def get_tools(self) -> dict:
         return {
