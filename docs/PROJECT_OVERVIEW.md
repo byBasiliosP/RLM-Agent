@@ -78,7 +78,7 @@ This decomposition has three advantages:
 
 1. **Model Routing.** Different tasks require different capability levels. The Scout agent (paper discovery) needs speed, not deep reasoning --- it runs on a cheap, fast model like `gpt-4.1-mini`. The Critic and Analyst agents need careful analytical reasoning and run on strong models like `gpt-4o` or `claude-sonnet-4-6`. This dual-model routing reduces cost by 40-60% compared to running everything on the strong model.
 
-2. **Focused Prompts.** Each agent has a tightly scoped system prompt. The Critic prompt instructs the model to evaluate methodology rigor and reliability on a 0-1 scale. The Synthesizer prompt instructs it to write coherent markdown with citations. Narrow prompts produce higher-quality outputs than broad "do everything" prompts.
+2. **Focused Prompts.** Each agent has a tightly scoped system prompt with a defined JSON output schema, scoring rubrics (Critic), extraction taxonomies (Reader), pattern definitions (Analyst), and structured output templates (Synthesizer). The Critic prompt defines 5-point rubrics for methodology and relevance scoring, a bias taxonomy (selection, confirmation, publication, funding, small sample), and reliability determination rules. The Synthesizer prompt specifies a 7-section markdown template with `[Author et al., Year]` citation format. Narrow, schema-driven prompts produce higher-quality, parseable outputs than broad "do everything" prompts.
 
 3. **Compositional Reliability.** If one agent fails (e.g., the Scout finds no papers), the Dispatcher can detect this programmatically and retry or adjust its strategy. The failure is contained to one stage rather than cascading through a monolithic pipeline.
 
@@ -106,13 +106,13 @@ The server uses FastMCP with stdio transport, making it trivially installable: t
 
 Each agent inherits from `SpecialistAgent` and implements `name`, `system_prompt`, and optionally `get_tools()`:
 
-| Agent | Role | Model Tier | Tools |
-|-------|------|-----------|-------|
-| **Scout** | Discover relevant papers | Cheap (fast) | `search_arxiv()`, `search_semantic_scholar()`, `get_citations()`, `get_references()` |
-| **Reader** | Extract structured findings | Strong | None (uses LLM reasoning) |
-| **Critic** | Evaluate methodology and reliability | Strong | None |
-| **Analyst** | Cross-paper comparison and gap identification | Strong | None |
-| **Synthesizer** | Write coherent literature review | Strong | None |
+| Agent | Role | Model Tier | Tools | Output |
+|-------|------|-----------|-------|--------|
+| **Scout** | Discover relevant papers | Cheap (fast) | `search_arxiv()`, `search_semantic_scholar()`, `get_citations()`, `get_references()` | JSON list of papers with deduplication and ranking |
+| **Reader** | Extract structured findings | Strong | None (uses LLM reasoning) | JSON with key_claims, methodology, results, limitations, confidence |
+| **Critic** | Evaluate methodology and reliability | Strong | None | JSON with methodology/relevance scores (0-1), bias flags, reliability rating |
+| **Analyst** | Cross-paper comparison and gap identification | Strong | None | JSON with themes, contradictions, gaps, consensus areas |
+| **Synthesizer** | Write coherent literature review | Strong | None | Structured markdown with 7 sections and `[Author et al., Year]` citations |
 
 The **Dispatcher** is a special agent that orchestrates the others. It writes Python code that calls `call_agent(name, task)` to dispatch work. The Dispatcher's system prompt describes the five-step workflow:
 
@@ -247,20 +247,24 @@ The system supports three research depth levels and three focus modes, creating 
 
 ## 7. Current Status and Test Coverage
 
-The system has **246 passing tests** across 22 test files, covering:
+The system has **334 passing tests** across 24 test files, covering:
 
 - Core agent loop and REPL execution (28 tests)
 - REPL namespace isolation and scaffold immutability (12 tests)
-- LLM client wrappers and model routing (21 tests)
+- LLM client wrappers, model routing, and retry logic (24 tests)
 - Dispatcher orchestration (11 tests)
-- Paper search tools (11 tests)
-- Memory store and semantic search (13 tests)
-- Research pipeline with deduplication (5 tests)
-- MCP server tool handlers (5 tests)
+- Paper search tools with connection pooling (13 tests)
+- Source adapters with connection pooling and logging (14 tests)
+- Memory store, semantic search, and embedding cache (15 tests)
+- Research pipeline with deduplication and concurrent collection (6 tests)
+- MCP server tool handlers with thread safety (44 tests)
+- Agent integration tests with mocked LLM chains (6 tests)
 - Integration tests (3 tests)
 - Package installer (8 tests)
 - Public API (16 tests)
 - Data types and parsing (36 tests)
+- Structured logging (3 tests)
+- HTML-to-text extraction (10 tests)
 
 The project is packaged as a pip-installable Python package with a `scholaragent-server` CLI entry point and a `install.sh` bootstrap script that auto-detects and registers with Claude Code, Cursor, Windsurf, and VS Code.
 
@@ -324,8 +328,9 @@ scholaragent/
 ├── clients/
 │   ├── base.py                  # BaseLM abstract class
 │   ├── router.py                # Model routing (cheap/strong)
-│   ├── openai_client.py         # OpenAI SDK wrapper
-│   └── anthropic_client.py      # Anthropic SDK wrapper
+│   ├── openai_client.py         # OpenAI SDK wrapper (with retry)
+│   ├── anthropic_client.py      # Anthropic SDK wrapper (with retry)
+│   └── rate_limiter.py          # Sliding-window RPM/TPM rate limiter
 ├── environments/
 │   ├── base.py                  # BaseEnv + REPLResult
 │   └── local_repl.py            # Sandboxed REPL
@@ -342,8 +347,10 @@ scholaragent/
 │   └── docs.py                  # Documentation fetcher
 ├── utils/
 │   ├── parsing.py               # Code block + final answer parsing
-│   └── prompts.py               # System prompts
-├── tests/                       # 246 tests across 22 files
+│   ├── prompts.py               # System prompts
+│   ├── retry.py                 # retry_with_backoff utility
+│   └── tokens.py                # Token counting
+├── tests/                       # 334 tests across 24 files
 └── docs/
     └── plans/                   # Design docs and implementation plans
 ```

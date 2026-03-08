@@ -78,11 +78,11 @@ Each agent runs an **RLM loop** (Reasoning via Language Models): generate Python
 
 | Agent | Role | Tools |
 |-------|------|-------|
-| **Scout** | Finds relevant papers | arXiv search, Semantic Scholar search, citation/reference graphs |
-| **Reader** | Extracts key findings | Paper metadata and abstract analysis |
-| **Critic** | Evaluates methodology | Scores rigor and relevance (0-1), identifies limitations |
-| **Analyst** | Compares across papers | Identifies themes, contradictions, research gaps |
-| **Synthesizer** | Writes the review | Produces structured markdown with citations |
+| **Scout** | Finds relevant papers | arXiv search, Semantic Scholar search, citation/reference graphs. Deduplicates across sources, ranks by relevance then citations. |
+| **Reader** | Extracts key findings | Extracts key claims, methodology, results, limitations. Assigns confidence (high/medium/low) based on available text. |
+| **Critic** | Evaluates methodology | Scores rigor and relevance (0-1) with defined rubrics. Flags biases (selection, confirmation, publication, funding, small sample). Rates reliability. |
+| **Analyst** | Compares across papers | Identifies themes (3+ papers), contradictions, research gaps, consensus areas. Weights findings by critic reliability scores. |
+| **Synthesizer** | Writes the review | Produces structured markdown (Introduction, Methodology Overview, Key Findings, Contradictions & Debates, Research Gaps, Conclusion, References) with `[Author et al., Year]` citations. |
 
 ### Multi-LLM Routing
 
@@ -195,7 +195,7 @@ scholaragent/
   environments/    # Sandboxed Python REPL
   utils/           # Parsing, prompts, budget tracking
   mcp_server.py    # FastMCP server (5 tools)
-tests/             # 246 tests
+tests/             # 334 tests
 examples/          # Usage examples
 install.sh         # One-command installer
 ```
