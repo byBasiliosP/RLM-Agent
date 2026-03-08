@@ -9,6 +9,8 @@ import httpx
 
 from scholaragent.utils.retry import retry_with_backoff
 
+_http_client = httpx.Client(timeout=30.0)
+
 S2_API_URL = "https://api.semanticscholar.org/graph/v1"
 
 
@@ -22,10 +24,9 @@ def search_semantic_scholar(query: str, limit: int = 10) -> str:
 
     try:
         response = retry_with_backoff(
-            httpx.get,
+            _http_client.get,
             f"{S2_API_URL}/paper/search",
             params=params,
-            timeout=30.0,
             max_retries=2,
             base_delay=2.0,
             retryable_exceptions=(httpx.HTTPError,),
@@ -65,10 +66,9 @@ def get_citations(paper_id: str, limit: int = 20) -> str:
 
     try:
         response = retry_with_backoff(
-            httpx.get,
+            _http_client.get,
             f"{S2_API_URL}/paper/{paper_id}/citations",
             params=params,
-            timeout=30.0,
             max_retries=2,
             base_delay=2.0,
             retryable_exceptions=(httpx.HTTPError,),
@@ -101,10 +101,9 @@ def get_references(paper_id: str, limit: int = 20) -> str:
 
     try:
         response = retry_with_backoff(
-            httpx.get,
+            _http_client.get,
             f"{S2_API_URL}/paper/{paper_id}/references",
             params=params,
-            timeout=30.0,
             max_retries=2,
             base_delay=2.0,
             retryable_exceptions=(httpx.HTTPError,),

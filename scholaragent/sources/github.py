@@ -6,6 +6,8 @@ import httpx
 
 from scholaragent.utils.retry import retry_with_backoff
 
+_http_client = httpx.Client(timeout=30.0)
+
 GITHUB_API_URL = "https://api.github.com/search/code"
 
 
@@ -36,11 +38,10 @@ def search_github_code(
 
     try:
         response = retry_with_backoff(
-            httpx.get,
+            _http_client.get,
             GITHUB_API_URL,
             params=params,
             headers=headers,
-            timeout=30.0,
             max_retries=2,
             base_delay=1.0,
             retryable_exceptions=(httpx.HTTPError,),

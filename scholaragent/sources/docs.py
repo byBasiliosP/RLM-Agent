@@ -7,6 +7,7 @@ import re
 
 import httpx
 
+_http_client = httpx.Client(timeout=30.0, follow_redirects=True)
 
 MAX_DOC_CONTENT_LENGTH = 10_000
 
@@ -28,7 +29,7 @@ def fetch_docs(url: str, timeout: float = 30.0) -> list[dict]:
     or empty list on error.
     """
     try:
-        response = httpx.get(url, timeout=timeout, follow_redirects=True)
+        response = _http_client.get(url, timeout=timeout)
         response.raise_for_status()
     except Exception:
         return []

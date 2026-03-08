@@ -6,6 +6,7 @@ All tests mock httpx.get so no real HTTP calls are made.
 import json
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -125,14 +126,14 @@ class TestParseArxivEntry:
 
 
 class TestSearchArxiv:
-    @patch("scholaragent.tools.arxiv.httpx.get")
-    def test_returns_json_list(self, mock_get):
+    @patch("scholaragent.tools.arxiv._http_client")
+    def test_returns_json_list(self, mock_client):
         from scholaragent.tools.arxiv import search_arxiv
 
         mock_resp = MagicMock()
         mock_resp.text = SAMPLE_ARXIV_FEED
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_client.get.return_value = mock_resp
 
         result = search_arxiv("transformer", max_results=5)
 
@@ -143,26 +144,26 @@ class TestSearchArxiv:
         assert papers[0]["title"] == "Attention Is All You Need"
         assert papers[1]["arxiv_id"] == "2302.00001v1"
 
-    @patch("scholaragent.tools.arxiv.httpx.get")
-    def test_passes_params(self, mock_get):
+    @patch("scholaragent.tools.arxiv._http_client")
+    def test_passes_params(self, mock_client):
         from scholaragent.tools.arxiv import search_arxiv
 
         mock_resp = MagicMock()
         mock_resp.text = SAMPLE_ARXIV_FEED
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_client.get.return_value = mock_resp
 
         search_arxiv("attention", max_results=3)
 
-        call_kwargs = mock_get.call_args
+        call_kwargs = mock_client.get.call_args
         assert call_kwargs[1]["params"]["search_query"] == "all:attention"
         assert call_kwargs[1]["params"]["max_results"] == 3
 
-    @patch("scholaragent.tools.arxiv.httpx.get")
-    def test_error_returns_json(self, mock_get):
+    @patch("scholaragent.tools.arxiv._http_client")
+    def test_error_returns_json(self, mock_client):
         from scholaragent.tools.arxiv import search_arxiv
 
-        mock_get.side_effect = Exception("connection timeout")
+        mock_client.get.side_effect = Exception("connection timeout")
 
         result = search_arxiv("test")
 
@@ -178,14 +179,14 @@ class TestSearchArxiv:
 
 
 class TestSearchSemanticScholar:
-    @patch("scholaragent.tools.semantic_scholar.httpx.get")
-    def test_returns_json_list(self, mock_get):
+    @patch("scholaragent.tools.semantic_scholar._http_client")
+    def test_returns_json_list(self, mock_client):
         from scholaragent.tools.semantic_scholar import search_semantic_scholar
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = SAMPLE_S2_SEARCH
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_client.get.return_value = mock_resp
 
         result = search_semantic_scholar("transformer", limit=5)
 
@@ -198,11 +199,11 @@ class TestSearchSemanticScholar:
         assert papers[0]["citation_count"] == 90000
         assert "Ashish Vaswani" in papers[0]["authors"]
 
-    @patch("scholaragent.tools.semantic_scholar.httpx.get")
-    def test_error_returns_json(self, mock_get):
+    @patch("scholaragent.tools.semantic_scholar._http_client")
+    def test_error_returns_json(self, mock_client):
         from scholaragent.tools.semantic_scholar import search_semantic_scholar
 
-        mock_get.side_effect = Exception("rate limited")
+        mock_client.get.side_effect = Exception("rate limited")
 
         result = search_semantic_scholar("test")
 
@@ -212,14 +213,14 @@ class TestSearchSemanticScholar:
 
 
 class TestGetCitations:
-    @patch("scholaragent.tools.semantic_scholar.httpx.get")
-    def test_returns_citing_papers(self, mock_get):
+    @patch("scholaragent.tools.semantic_scholar._http_client")
+    def test_returns_citing_papers(self, mock_client):
         from scholaragent.tools.semantic_scholar import get_citations
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = SAMPLE_S2_CITATIONS
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_client.get.return_value = mock_resp
 
         result = get_citations("abc123", limit=10)
 
@@ -230,11 +231,11 @@ class TestGetCitations:
         assert citations[0]["title"] == "BERT: Pre-training"
         assert citations[0]["year"] == 2019
 
-    @patch("scholaragent.tools.semantic_scholar.httpx.get")
-    def test_error_returns_json(self, mock_get):
+    @patch("scholaragent.tools.semantic_scholar._http_client")
+    def test_error_returns_json(self, mock_client):
         from scholaragent.tools.semantic_scholar import get_citations
 
-        mock_get.side_effect = Exception("not found")
+        mock_client.get.side_effect = Exception("not found")
 
         result = get_citations("bad_id")
 
@@ -243,14 +244,14 @@ class TestGetCitations:
 
 
 class TestGetReferences:
-    @patch("scholaragent.tools.semantic_scholar.httpx.get")
-    def test_returns_referenced_papers(self, mock_get):
+    @patch("scholaragent.tools.semantic_scholar._http_client")
+    def test_returns_referenced_papers(self, mock_client):
         from scholaragent.tools.semantic_scholar import get_references
 
         mock_resp = MagicMock()
         mock_resp.json.return_value = SAMPLE_S2_REFERENCES
         mock_resp.raise_for_status = MagicMock()
-        mock_get.return_value = mock_resp
+        mock_client.get.return_value = mock_resp
 
         result = get_references("abc123", limit=10)
 
@@ -261,11 +262,11 @@ class TestGetReferences:
         assert refs[0]["title"] == "Sequence to Sequence Learning"
         assert refs[0]["year"] == 2014
 
-    @patch("scholaragent.tools.semantic_scholar.httpx.get")
-    def test_error_returns_json(self, mock_get):
+    @patch("scholaragent.tools.semantic_scholar._http_client")
+    def test_error_returns_json(self, mock_client):
         from scholaragent.tools.semantic_scholar import get_references
 
-        mock_get.side_effect = Exception("server error")
+        mock_client.get.side_effect = Exception("server error")
 
         result = get_references("bad_id")
 
@@ -293,9 +294,9 @@ class TestToolsAreCallable:
         assert callable(get_citations)
         assert callable(get_references)
 
-    @patch("scholaragent.tools.arxiv.httpx.get")
-    @patch("scholaragent.tools.semantic_scholar.httpx.get")
-    def test_all_search_functions_return_str(self, mock_s2_get, mock_arxiv_get):
+    @patch("scholaragent.tools.arxiv._http_client")
+    @patch("scholaragent.tools.semantic_scholar._http_client")
+    def test_all_search_functions_return_str(self, mock_s2_client, mock_arxiv_client):
         from scholaragent.tools.arxiv import search_arxiv
         from scholaragent.tools.semantic_scholar import (
             get_citations,
@@ -307,13 +308,13 @@ class TestToolsAreCallable:
         arxiv_resp = MagicMock()
         arxiv_resp.text = SAMPLE_ARXIV_FEED
         arxiv_resp.raise_for_status = MagicMock()
-        mock_arxiv_get.return_value = arxiv_resp
+        mock_arxiv_client.get.return_value = arxiv_resp
 
         # Set up S2 mock
         s2_resp = MagicMock()
         s2_resp.json.return_value = SAMPLE_S2_SEARCH
         s2_resp.raise_for_status = MagicMock()
-        mock_s2_get.return_value = s2_resp
+        mock_s2_client.get.return_value = s2_resp
 
         assert isinstance(search_arxiv("test"), str)
         assert isinstance(search_semantic_scholar("test"), str)
@@ -324,3 +325,15 @@ class TestToolsAreCallable:
 
         s2_resp.json.return_value = SAMPLE_S2_REFERENCES
         assert isinstance(get_references("id"), str)
+
+
+class TestConnectionPooling:
+    def test_arxiv_uses_shared_client(self):
+        import scholaragent.tools.arxiv as mod
+        assert hasattr(mod, "_http_client")
+        assert isinstance(mod._http_client, httpx.Client)
+
+    def test_semantic_scholar_uses_shared_client(self):
+        import scholaragent.tools.semantic_scholar as mod
+        assert hasattr(mod, "_http_client")
+        assert isinstance(mod._http_client, httpx.Client)

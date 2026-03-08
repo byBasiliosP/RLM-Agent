@@ -10,6 +10,8 @@ import httpx
 
 from scholaragent.utils.retry import retry_with_backoff
 
+_http_client = httpx.Client(timeout=30.0, follow_redirects=True)
+
 ARXIV_API_URL = "http://export.arxiv.org/api/query"
 
 
@@ -81,10 +83,9 @@ def search_arxiv(query: str, max_results: int = 10) -> str:
 
     try:
         response = retry_with_backoff(
-            httpx.get,
+            _http_client.get,
             ARXIV_API_URL,
             params=params,
-            timeout=30.0,
             max_retries=2,
             base_delay=3.0,
             retryable_exceptions=(httpx.HTTPError,),
