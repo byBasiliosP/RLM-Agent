@@ -7,6 +7,7 @@ import anthropic
 from typing import TYPE_CHECKING
 
 from scholaragent.clients.base import BaseLM
+from scholaragent.utils.retry import retry_with_backoff
 
 if TYPE_CHECKING:
     from scholaragent.clients.rate_limiter import RateLimiter
@@ -51,7 +52,15 @@ class AnthropicClient(BaseLM):
     def completion(self, prompt: str) -> str:
         if self.rate_limiter:
             self.rate_limiter.wait_if_needed()
-        response = self._sync_client.messages.create(
+        response = retry_with_backoff(
+            self._sync_client.messages.create,
+            max_retries=3,
+            base_delay=1.0,
+            retryable_exceptions=(
+                anthropic.RateLimitError,
+                anthropic.APIConnectionError,
+                anthropic.InternalServerError,
+            ),
             model=self.model_name,
             max_tokens=self.max_tokens or self.DEFAULT_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
@@ -78,7 +87,17 @@ class AnthropicClient(BaseLM):
         }
         if system_msg:
             kwargs["system"] = system_msg
-        response = self._sync_client.messages.create(**kwargs)
+        response = retry_with_backoff(
+            self._sync_client.messages.create,
+            max_retries=3,
+            base_delay=1.0,
+            retryable_exceptions=(
+                anthropic.RateLimitError,
+                anthropic.APIConnectionError,
+                anthropic.InternalServerError,
+            ),
+            **kwargs,
+        )
         self._record_usage(response.usage)
         if self.rate_limiter:
             self.rate_limiter.record_tokens(self._last_usage.total_tokens)

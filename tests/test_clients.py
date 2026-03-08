@@ -399,3 +399,86 @@ class TestRateLimiterIntegration:
         with patch("scholaragent.clients.openai_client.openai"):
             client = OpenAIClient(model_name="gpt-4o", api_key="fake")
         assert client.rate_limiter is None
+
+
+# ---------------------------------------------------------------------------
+# 9. Client error handling and retry
+# ---------------------------------------------------------------------------
+class TestClientErrorHandling:
+    @patch("scholaragent.utils.retry.time.sleep")  # skip actual delays
+    def test_openai_retries_on_rate_limit(self, mock_sleep):
+        """OpenAI client should retry on RateLimitError."""
+        import openai as openai_mod
+
+        call_count = 0
+        def fake_create(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise openai_mod.RateLimitError(
+                    message="Rate limit exceeded",
+                    response=MagicMock(status_code=429),
+                    body=None,
+                )
+            mock_resp = MagicMock()
+            mock_resp.choices = [MagicMock(message=MagicMock(content="ok"))]
+            mock_resp.usage = MagicMock(prompt_tokens=10, completion_tokens=5)
+            return mock_resp
+
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="gpt-4o-mini")
+        client._sync_client = MagicMock()
+        client._sync_client.chat.completions.create = fake_create
+
+        result = client.completion("test")
+        assert result == "ok"
+        assert call_count == 3  # 2 failures + 1 success
+
+    @patch("scholaragent.utils.retry.time.sleep")
+    def test_openai_raises_after_max_retries(self, mock_sleep):
+        """After max retries, the error should propagate."""
+        import openai as openai_mod
+
+        def always_fail(**kwargs):
+            raise openai_mod.RateLimitError(
+                message="Rate limit exceeded",
+                response=MagicMock(status_code=429),
+                body=None,
+            )
+
+        with patch("scholaragent.clients.openai_client.openai"):
+            client = OpenAIClient(model_name="gpt-4o-mini")
+        client._sync_client = MagicMock()
+        client._sync_client.chat.completions.create = always_fail
+
+        with pytest.raises(openai_mod.RateLimitError):
+            client.completion("test")
+
+    @patch("scholaragent.utils.retry.time.sleep")
+    def test_anthropic_retries_on_rate_limit(self, mock_sleep):
+        """Anthropic client should retry on RateLimitError."""
+        import anthropic as anthropic_mod
+
+        call_count = 0
+        def fake_create(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise anthropic_mod.RateLimitError(
+                    message="Rate limit exceeded",
+                    response=MagicMock(status_code=429),
+                    body=None,
+                )
+            mock_resp = MagicMock()
+            mock_resp.content = [MagicMock(text="ok")]
+            mock_resp.usage = MagicMock(input_tokens=10, output_tokens=5)
+            return mock_resp
+
+        with patch("scholaragent.clients.anthropic_client.anthropic"):
+            client = AnthropicClient(model_name="claude-sonnet-4-20250514")
+        client._sync_client = MagicMock()
+        client._sync_client.messages.create = fake_create
+
+        result = client.completion("test")
+        assert result == "ok"
+        assert call_count == 3

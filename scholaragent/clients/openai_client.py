@@ -8,6 +8,7 @@ import openai
 from typing import TYPE_CHECKING
 
 from scholaragent.clients.base import BaseLM
+from scholaragent.utils.retry import retry_with_backoff
 
 if TYPE_CHECKING:
     from scholaragent.clients.rate_limiter import RateLimiter
@@ -54,7 +55,17 @@ class OpenAIClient(BaseLM):
         kwargs: dict = {"model": self.model_name, "messages": messages}
         if self.max_tokens is not None:
             kwargs["max_tokens"] = self.max_tokens
-        response = self._sync_client.chat.completions.create(**kwargs)
+        response = retry_with_backoff(
+            self._sync_client.chat.completions.create,
+            max_retries=3,
+            base_delay=1.0,
+            retryable_exceptions=(
+                openai.RateLimitError,
+                openai.APIConnectionError,
+                openai.InternalServerError,
+            ),
+            **kwargs,
+        )
         self._record_usage(response.usage)
         if self.rate_limiter:
             self.rate_limiter.record_tokens(self._last_usage.total_tokens)
@@ -66,7 +77,17 @@ class OpenAIClient(BaseLM):
         kwargs: dict = {"model": self.model_name, "messages": messages}
         if self.max_tokens is not None:
             kwargs["max_tokens"] = self.max_tokens
-        response = self._sync_client.chat.completions.create(**kwargs)
+        response = retry_with_backoff(
+            self._sync_client.chat.completions.create,
+            max_retries=3,
+            base_delay=1.0,
+            retryable_exceptions=(
+                openai.RateLimitError,
+                openai.APIConnectionError,
+                openai.InternalServerError,
+            ),
+            **kwargs,
+        )
         self._record_usage(response.usage)
         if self.rate_limiter:
             self.rate_limiter.record_tokens(self._last_usage.total_tokens)
