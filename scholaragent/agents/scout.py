@@ -47,6 +47,7 @@ Return a JSON string — a list of objects, each with these fields:
     "authors": ["Author One", "Author Two"],
     "abstract": "The abstract text...",
     "arxiv_id": "2301.00001 or empty string if unavailable",
+    "paper_id": "Semantic Scholar paper ID or empty string if unavailable",
     "year": 2023,
     "citation_count": 42,
     "source": "arxiv" or "semantic_scholar"
