@@ -38,10 +38,6 @@ if "mcpServers" not in config:
 
 config["mcpServers"][server_name] = {
     "command": server_cmd,
-    "env": {
-        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
-        "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
-    }
 }
 
 os.makedirs(os.path.dirname(config_path), exist_ok=True)
@@ -53,7 +49,7 @@ with open(config_path, "w") as f:
         result = subprocess.run(
             [VENV_PYTHON, "-c", code, config_path, server_cmd, "scholar-memory"],
             capture_output=True, text=True,
-            env={**os.environ, "OPENAI_API_KEY": "test-key", "ANTHROPIC_API_KEY": "test-key-2"},
+            env=os.environ.copy(),
         )
         assert result.returncode == 0, f"Failed: {result.stderr}"
 

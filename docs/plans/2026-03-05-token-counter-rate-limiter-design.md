@@ -1,7 +1,7 @@
 # Token Counter & Rate Limiter Design
 
 **Date:** 2026-03-05
-**Status:** Approved
+**Status:** Implemented
 
 ## Goal
 

@@ -28,7 +28,7 @@ The system has three layers:
 
 2. **The Memory Layer** --- a SQLite-backed semantic store with OpenAI embeddings that indexes every finding, enabling sub-second retrieval across sessions through cosine similarity search.
 
-3. **The MCP Interface** --- a FastMCP server exposing five tools (`memory_lookup`, `memory_research`, `memory_store`, `memory_forget`, `memory_status`) that any MCP-compatible coding agent (Claude Code, Cursor, Windsurf, VS Code) can call to access research findings while writing code.
+3. **The MCP Interface** --- a FastMCP server exposing six tools (`memory_lookup`, `memory_research`, `memory_store`, `memory_forget`, `memory_status`, `memory_model_config`) that any MCP-compatible coding agent (Claude Code, Cursor, Windsurf, VS Code) can call to access research findings while writing code.
 
 A typical interaction looks like this:
 
@@ -36,12 +36,21 @@ A typical interaction looks like this:
 from scholaragent import ScholarAgent
 
 agent = ScholarAgent(
-    strong_model={"backend": "openai", "model_name": "gpt-4o"},
-    cheap_model={"backend": "openai", "model_name": "gpt-4.1-mini"},
+    strong_model={"backend": "anthropic", "model_name": "claude-sonnet-4-6"},
+    cheap_model={"backend": "openai", "model_name": "gpt-4o-mini"},
 )
 
 result = agent.research("What are the latest advances in RLHF for large language models?")
 print(result.result)  # Full literature review with citations
+```
+
+For fully local inference with no API costs:
+
+```python
+agent = ScholarAgent(
+    strong_model={"backend": "lmstudio", "model_name": "qwen3-30b-a3b"},
+    cheap_model={"backend": "lmstudio", "model_name": "llama-3.2-3b-instruct"},
+)
 ```
 
 The system searches arXiv and Semantic Scholar, reads and extracts findings from discovered papers, evaluates their methodology, performs cross-paper analysis, and writes a coherent literature review --- all autonomously.
@@ -94,9 +103,9 @@ A 7-day deduplication window prevents the system from re-researching the same to
 
 MCP, introduced by Anthropic in November 2024, is an open standard for connecting AI assistants to external data sources and tools. It draws inspiration from the Language Server Protocol (LSP), which standardized how editors communicate with language-specific tooling. MCP standardizes how AI applications communicate with context-providing servers.
 
-RLM Agent's MCP server exposes the memory layer as five tools that any MCP-compatible client can call. This means a developer using Claude Code, Cursor, or any MCP-enabled editor can invoke `memory_lookup("RLHF reward models")` while writing code and receive relevant research findings inline --- without leaving their editor or re-running a research pipeline.
+RLM Agent's MCP server exposes the memory layer as six tools that any MCP-compatible client can call. This means a developer using Claude Code, Cursor, or any MCP-enabled editor can invoke `memory_lookup("RLHF reward models")` while writing code and receive relevant research findings inline --- without leaving their editor or re-running a research pipeline.
 
-The server uses FastMCP with stdio transport, making it trivially installable: the `install.sh` bootstrap script auto-detects installed editors and registers the server in their MCP configuration files.
+The server uses FastMCP with stdio transport, making it trivially installable. Two installation methods are provided: a `scholaragent-install` CLI command (after `pip install scholaragent`) and a `install.sh` bash script. Both auto-detect installed editors (Claude Code, Cursor, Windsurf, VS Code) and register the server in their MCP configuration files. API keys are never stored in config files — they are inherited from the user's shell environment at runtime.
 
 ---
 
@@ -247,7 +256,7 @@ The system supports three research depth levels and three focus modes, creating 
 
 ## 7. Current Status and Test Coverage
 
-The system has **341 passing tests** across 24 test files, covering:
+The system has **341 passing tests** across 23 test files, covering:
 
 - Core agent loop and REPL execution (28 tests)
 - REPL namespace isolation and scaffold immutability (12 tests)
@@ -266,7 +275,7 @@ The system has **341 passing tests** across 24 test files, covering:
 - Structured logging (3 tests)
 - HTML-to-text extraction (10 tests)
 
-The project is packaged as a pip-installable Python package with a `scholaragent-server` CLI entry point and a `install.sh` bootstrap script that auto-detects and registers with Claude Code, Cursor, Windsurf, and VS Code.
+The project is packaged as a pip-installable Python package with two CLI entry points (`scholaragent-server` for the MCP server and `scholaragent-install` for agent registration) and a fallback `install.sh` bash script. Both auto-detect and register with Claude Code, Cursor, Windsurf, and VS Code. API keys are never stored in config files — they are resolved from the user's shell environment at runtime.
 
 ---
 
@@ -309,9 +318,8 @@ The project is packaged as a pip-installable Python package with a `scholaragent
 ```
 scholaragent/
 ├── __init__.py                  # Public API: ScholarAgent class
-├── mcp_server.py                # FastMCP server (5 tools)
-├── install.sh                   # Bootstrap installer
-├── pyproject.toml               # Package config
+├── mcp_server.py                # FastMCP server (6 tools)
+├── installer.py                 # CLI installer (scholaragent-install)
 ├── core/
 │   ├── agent.py                 # SpecialistAgent + RLM loop
 │   ├── dispatcher.py            # Orchestrator agent
@@ -330,6 +338,7 @@ scholaragent/
 │   ├── router.py                # Model routing (cheap/strong)
 │   ├── openai_client.py         # OpenAI SDK wrapper (with retry)
 │   ├── anthropic_client.py      # Anthropic SDK wrapper (with retry)
+│   ├── token_counter.py         # Per-model token usage tracking
 │   └── rate_limiter.py          # Sliding-window RPM/TPM rate limiter
 ├── environments/
 │   ├── base.py                  # BaseEnv + REPLResult
@@ -337,20 +346,24 @@ scholaragent/
 ├── memory/
 │   ├── store.py                 # SQLite + semantic search
 │   ├── types.py                 # MemoryEntry types
-│   ├── research.py              # Research pipeline
-│   └── embeddings.py            # Embedding backend
+│   ├── research.py              # Research pipeline (concurrent collection)
+│   └── embeddings.py            # Embedding backend (with LRU cache)
 ├── tools/
-│   ├── arxiv.py                 # arXiv API
-│   └── semantic_scholar.py      # Semantic Scholar API
+│   ├── arxiv.py                 # arXiv API (connection pooled)
+│   └── semantic_scholar.py      # Semantic Scholar API (connection pooled)
 ├── sources/
-│   ├── github.py                # GitHub code search
-│   └── docs.py                  # Documentation fetcher
+│   ├── github.py                # GitHub code search (connection pooled)
+│   └── docs.py                  # Documentation fetcher (connection pooled)
 ├── utils/
 │   ├── parsing.py               # Code block + final answer parsing
 │   ├── prompts.py               # System prompts
 │   ├── retry.py                 # retry_with_backoff utility
-│   └── tokens.py                # Token counting
-├── tests/                       # 334 tests across 24 files
+│   ├── budget.py                # Resource budget tracking
+│   └── token_counter.py         # Token counting utilities
+├── install.sh                   # Bash installer (alternative to scholaragent-install)
+├── mcp-config-example.json      # Example MCP config for manual setup
+├── pyproject.toml               # Package config (v0.2.0)
+├── tests/                       # 341 tests across 23 files
 └── docs/
     └── plans/                   # Design docs and implementation plans
 ```

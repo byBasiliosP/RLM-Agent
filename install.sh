@@ -57,10 +57,6 @@ if "mcpServers" not in config:
 
 config["mcpServers"][server_name] = {
     "command": server_cmd,
-    "env": {
-        "OPENAI_API_KEY": os.environ.get("OPENAI_API_KEY", ""),
-        "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
-    }
 }
 
 os.makedirs(os.path.dirname(config_path), exist_ok=True)

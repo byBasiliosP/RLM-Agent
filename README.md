@@ -16,7 +16,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ./install.sh
 ```
 
-That's it. Restart your coding agent (Claude Code, Cursor, Windsurf, VS Code) and you'll have 5 new tools available.
+That's it. Restart your coding agent (Claude Code, Cursor, Windsurf, VS Code) and you'll have 6 new tools available.
 
 ## What It Does
 
@@ -37,7 +37,7 @@ Your Query
  Memory Store (SQLite + embeddings)
     |
     v
- MCP Server (5 tools for your coding agent)
+ MCP Server (6 tools for your coding agent)
 ```
 
 Papers are found on **arXiv** and **Semantic Scholar**. Code examples come from **GitHub**. Documentation comes from the web. Everything gets indexed with embeddings for fast semantic search.
@@ -53,6 +53,7 @@ Once installed, your coding agent gets these tools:
 | `memory_store` | Manually save a finding, snippet, or insight for later | instant |
 | `memory_forget` | Remove stale entries by ID or semantic query | instant |
 | `memory_status` | Check what's in memory (counts, sources, history) | instant |
+| `memory_model_config` | Show active LLM backend configuration (strong/cheap models) | instant |
 
 ### Research Depth Levels
 
@@ -143,55 +144,47 @@ strong_model={"backend": "lmstudio", "model_name": "kimi-dev-72b", "base_url": "
 
 ## Installation
 
-### One-Command Install
+### pip install
 
 ```bash
+pip install scholaragent
+scholaragent-install
+```
+
+That's it. The installer auto-detects and registers the MCP server in Claude Code, Cursor, Windsurf, and VS Code.
+
+#### Using LM Studio (local models)
+
+```bash
+scholaragent-install --backend lmstudio
+```
+
+Pick specific models:
+
+```bash
+scholaragent-install --backend lmstudio --strong-model kimi-dev-72b --cheap-model llama-3.2-3b-instruct
+```
+
+#### Uninstall
+
+```bash
+scholaragent-install --uninstall
+```
+
+### From source
+
+```bash
+git clone https://github.com/byBasiliosP/RLM-Agent.git
+cd RLM-Agent
 ./install.sh
 ```
 
-This will:
-
-1. Check for Python 3.12+
-2. Create a virtual environment at `.venv/`
-3. Install the package (editable mode)
-4. Validate that `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are set
-5. Auto-detect and register the MCP server in:
-   - Claude Code (`~/.claude/settings.json`)
-   - Cursor (`~/.cursor/mcp.json`)
-   - Windsurf (`~/.windsurf/mcp.json`)
-   - VS Code (`~/.vscode/mcp.json`)
-
-### Manual Install
+Or manually:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
 pip install -e .
+scholaragent-install
 ```
-
-Then add to your agent's MCP config:
-
-```json
-{
-  "mcpServers": {
-    "scholar-memory": {
-      "command": "/path/to/RLM-Agent/.venv/bin/scholaragent-server",
-      "env": {
-        "OPENAI_API_KEY": "your-key",
-        "ANTHROPIC_API_KEY": "your-key"
-      }
-    }
-  }
-}
-```
-
-### Uninstall
-
-```bash
-./install.sh --uninstall
-```
-
-Removes the MCP server entry from all detected agent configs.
 
 ## Environment Variables
 
@@ -215,10 +208,11 @@ scholaragent/
   tools/           # Search tools (arXiv, Semantic Scholar)
   environments/    # Sandboxed Python REPL
   utils/           # Parsing, prompts, budget tracking
-  mcp_server.py    # FastMCP server (5 tools)
-tests/             # 341 tests
+  mcp_server.py    # FastMCP server (6 tools)
+  installer.py     # CLI installer (scholaragent-install)
+tests/             # 341 tests across 23 files
 examples/          # Usage examples
-install.sh         # One-command installer
+install.sh         # Bash installer (alternative)
 ```
 
 ## Development

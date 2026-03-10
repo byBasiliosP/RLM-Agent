@@ -20,6 +20,7 @@ dev = [
 
 [project.scripts]
 scholaragent-server = "scholaragent.mcp_server:main"
+scholaragent-install = "scholaragent.installer:main"
 
 [build-system]
 requires = ["hatchling"]

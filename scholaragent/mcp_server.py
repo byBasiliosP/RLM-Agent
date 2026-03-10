@@ -7,15 +7,20 @@ Configuration for coding agents:
 {
     "mcpServers": {
         "scholar-memory": {
-            "command": "python",
-            "args": ["-m", "scholaragent.mcp_server"],
-            "env": {
-                "OPENAI_API_KEY": "...",
-                "ANTHROPIC_API_KEY": "..."
-            }
+            "command": "scholaragent-server"
         }
     }
 }
+
+API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY) are read from the user's
+shell environment at runtime — never store them in config files.
+
+Model backend configuration via environment variables:
+    SCHOLAR_STRONG_BACKEND  - "openai", "anthropic", or "lmstudio" (default: "anthropic")
+    SCHOLAR_STRONG_MODEL    - Model name for strong agents (default: "claude-sonnet-4-6")
+    SCHOLAR_CHEAP_BACKEND   - "openai", "anthropic", or "lmstudio" (default: "openai")
+    SCHOLAR_CHEAP_MODEL     - Model name for cheap agents (default: "gpt-4o-mini")
+    SCHOLAR_LMSTUDIO_URL    - LM Studio base URL (default: "http://localhost:1234/v1")
 """
 
 import atexit
@@ -46,6 +51,26 @@ _init_lock = threading.Lock()
 
 DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
 DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
+
+
+def _build_model_config() -> dict:
+    """Build strong/cheap model config dicts from environment variables."""
+    lmstudio_url = os.environ.get("SCHOLAR_LMSTUDIO_URL", "http://localhost:1234/v1")
+
+    strong_backend = os.environ.get("SCHOLAR_STRONG_BACKEND", "anthropic")
+    strong_model = os.environ.get("SCHOLAR_STRONG_MODEL", "claude-sonnet-4-6")
+    cheap_backend = os.environ.get("SCHOLAR_CHEAP_BACKEND", "openai")
+    cheap_model = os.environ.get("SCHOLAR_CHEAP_MODEL", "gpt-4o-mini")
+
+    strong = {"backend": strong_backend, "model_name": strong_model}
+    cheap = {"backend": cheap_backend, "model_name": cheap_model}
+
+    if strong_backend == "lmstudio":
+        strong["base_url"] = lmstudio_url
+    if cheap_backend == "lmstudio":
+        cheap["base_url"] = lmstudio_url
+
+    return {"strong": strong, "cheap": cheap}
 
 
 def _cleanup():
@@ -250,7 +275,22 @@ def memory_status() -> str:
     return json.dumps(result, indent=2)
 
 
+@mcp.tool()
+def memory_model_config() -> str:
+    """Show the current LLM backend configuration.
+
+    Returns which models and backends are configured for strong
+    (analytical) and cheap (search) agents.
+    """
+    config = _build_model_config()
+    return json.dumps(config, indent=2)
+
+
 def main():
+    config = _build_model_config()
+    logger.info("Model config: strong=%s/%s, cheap=%s/%s",
+                config["strong"]["backend"], config["strong"]["model_name"],
+                config["cheap"]["backend"], config["cheap"]["model_name"])
     mcp.run()
 
 

@@ -1,6 +1,6 @@
 # Token Counter & Rate Limiter Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **Status:** ✅ Fully implemented. All 4 tasks completed.
 
 **Goal:** Add per-client API rate limiting (RPM/TPM) and a token counter with live logging and end-of-run summaries.
 
