@@ -204,6 +204,36 @@ class TestMCPToolFunctions:
         result50 = _memory_lookup(store=store, query="test", max_results=50)
         assert "error" not in result50
 
+    def test_memory_lookup_compact_default_excludes_content(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        store.add(self._make_entry("Full content about transformers"))
+        result = _memory_lookup(store=store, query="transformers")
+        assert len(result["results"]) > 0
+        for r in result["results"]:
+            assert "content" not in r
+            assert "summary" in r
+
+    def test_memory_lookup_compact_false_includes_content(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        store.add(self._make_entry("Full content about RLHF"))
+        result = _memory_lookup(store=store, query="RLHF", compact=False)
+        assert len(result["results"]) > 0
+        for r in result["results"]:
+            assert "content" in r
+            assert "summary" in r
+
+    def test_memory_lookup_compact_has_relevance_score(self):
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        store.add(self._make_entry("Machine learning algorithms"))
+        result = _memory_lookup(store=store, query="machine learning", compact=True)
+        assert "relevance_score" in result["results"][0]
+
     # ---- memory_forget ----
 
     def test_memory_forget_by_id(self):

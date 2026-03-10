@@ -21,6 +21,9 @@ Model backend configuration via environment variables:
     SCHOLAR_CHEAP_BACKEND   - "openai", "anthropic", or "lmstudio" (default: "openai")
     SCHOLAR_CHEAP_MODEL     - Model name for cheap agents (default: "gpt-4o-mini")
     SCHOLAR_LMSTUDIO_URL    - LM Studio base URL (default: "http://localhost:1234/v1")
+    SCHOLAR_EMBEDDING_BACKEND - "openai" or "lmstudio" (default: "openai")
+    SCHOLAR_EMBEDDING_MODEL - Embedding model name (defaults depend on backend)
+    SCHOLAR_EMBEDDING_BASE_URL - Optional embedding endpoint override
 """
 
 import atexit
@@ -119,13 +122,17 @@ def _memory_lookup(
     query: str,
     sources: list[str] | None = None,
     max_results: int = 5,
+    compact: bool = True,
 ) -> dict:
     if not 1 <= max_results <= 50:
         return {"error": "max_results must be between 1 and 50"}
     results = store.search(query, max_results=max_results, sources=sources)
     return {
         "results": [
-            {**entry.to_dict(), "relevance_score": round(score, 3)}
+            {
+                **(entry.to_compact_dict() if compact else entry.to_dict()),
+                "relevance_score": round(score, 3),
+            }
             for entry, score in results
         ],
         "total_indexed": store.count(),
@@ -196,6 +203,7 @@ def memory_lookup(
     query: str,
     sources: list[str] | None = None,
     max_results: int = 5,
+    compact: bool = True,
 ) -> str:
     """Fast semantic search over all indexed knowledge.
 
@@ -206,8 +214,9 @@ def memory_lookup(
         query: What you're looking for (natural language)
         sources: Filter by source type: "paper", "docs", "code" (optional)
         max_results: Maximum results to return (default 5)
+        compact: Return summaries only (default True). Set False for full content.
     """
-    result = _memory_lookup(_get_store(), query, sources, max_results)
+    result = _memory_lookup(_get_store(), query, sources, max_results, compact)
     return json.dumps(result, indent=2)
 
 

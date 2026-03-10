@@ -36,6 +36,20 @@ class MemoryEntry:
             "access_count": self.access_count,
         }
 
+    def to_compact_dict(self) -> dict:
+        """Return a compact representation without full content.
+
+        Used by MCP tools to reduce response size and avoid
+        filling up the client agent's context window.
+        """
+        return {
+            "id": self.id,
+            "summary": self.summary,
+            "source_type": self.source_type,
+            "source_ref": self.source_ref,
+            "tags": list(self.tags),
+        }
+
 
 @dataclass
 class ResearchLogEntry:

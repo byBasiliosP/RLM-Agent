@@ -24,6 +24,20 @@ class TestMemoryEntry:
         assert "id" in d
         assert d["access_count"] == 0
 
+    def test_to_compact_dict(self):
+        from scholaragent.memory.types import MemoryEntry
+        entry = MemoryEntry(content="Full content here", summary="Short summary", source_type="paper", source_ref="arxiv:1234", tags=["ml"])
+        d = entry.to_compact_dict()
+        assert d["summary"] == "Short summary"
+        assert d["source_type"] == "paper"
+        assert d["source_ref"] == "arxiv:1234"
+        assert d["tags"] == ["ml"]
+        assert "id" in d
+        assert "content" not in d
+        assert "embedding" not in d
+        assert "created_at" not in d
+        assert "access_count" not in d
+
     def test_invalid_source_type(self):
         from scholaragent.memory.types import MemoryEntry
         with pytest.raises(ValueError, match="source_type"):

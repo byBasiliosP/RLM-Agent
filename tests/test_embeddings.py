@@ -1,6 +1,7 @@
 """Tests for embedding backends."""
 import pytest
 from unittest.mock import patch, MagicMock
+import os
 
 
 class TestEmbeddingBackendABC:
@@ -51,6 +52,27 @@ class TestOpenAIEmbeddings:
         backend = OpenAIEmbeddings()
         results = backend.embed_batch(["a", "b"])
         assert len(results) == 2
+
+    @patch.dict(
+        os.environ,
+        {
+            "SCHOLAR_EMBEDDING_BACKEND": "lmstudio",
+            "SCHOLAR_LMSTUDIO_URL": "http://localhost:1234/v1",
+            "SCHOLAR_EMBEDDING_MODEL": "text-embedding-nomic-embed-text-v1.5",
+        },
+        clear=False,
+    )
+    @patch("openai.OpenAI")
+    def test_creation_uses_lmstudio_env(self, mock_openai):
+        from scholaragent.memory.embeddings import OpenAIEmbeddings
+
+        backend = OpenAIEmbeddings()
+
+        assert backend.model == "text-embedding-nomic-embed-text-v1.5"
+        mock_openai.assert_called_once_with(
+            base_url="http://localhost:1234/v1",
+            api_key="lm-studio",
+        )
 
 
 class TestEmbeddingCache:

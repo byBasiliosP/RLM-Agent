@@ -142,6 +142,16 @@ LM Studio must be running at `http://localhost:1234/v1` (default). For a custom 
 strong_model={"backend": "lmstudio", "model_name": "kimi-dev-72b", "base_url": "http://192.168.1.100:1234/v1"}
 ```
 
+To run both the agent models and embeddings locally through LM Studio, set:
+
+```bash
+export SCHOLAR_STRONG_BACKEND=lmstudio
+export SCHOLAR_CHEAP_BACKEND=lmstudio
+export SCHOLAR_LMSTUDIO_URL=http://localhost:1234/v1
+export SCHOLAR_EMBEDDING_BACKEND=lmstudio
+export SCHOLAR_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5
+```
+
 ## Installation
 
 ### pip install
@@ -190,11 +200,11 @@ scholaragent-install
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `OPENAI_API_KEY` | Yes* | Embeddings + cheap model routing |
+| `OPENAI_API_KEY` | Yes* | OpenAI embeddings + OpenAI model routing |
 | `ANTHROPIC_API_KEY` | Yes* | Strong model for analysis agents |
 | `GITHUB_TOKEN` | No | GitHub code search (higher rate limits) |
 
-*When using LM Studio for all agents, only `OPENAI_API_KEY` is required (for embeddings). `ANTHROPIC_API_KEY` is only needed if using the Anthropic backend.
+*When using LM Studio for all agents and embeddings, OpenAI and Anthropic API keys are not required. `ANTHROPIC_API_KEY` is only needed if using the Anthropic backend.
 
 ## Project Structure
 
