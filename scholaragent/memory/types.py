@@ -24,6 +24,28 @@ class MemoryEntry:
                 f"source_type must be one of {sorted(VALID_SOURCE_TYPES)}, got '{self.source_type}'"
             )
 
+    @staticmethod
+    def smart_summary(content: str, max_length: int = 200) -> str:
+        """Truncate content at the last sentence boundary within max_length.
+
+        Produces clean summaries that end at sentence boundaries instead
+        of cutting mid-word. Falls back to word boundaries for content
+        without sentence-ending punctuation (e.g., code snippets).
+        """
+        if len(content) <= max_length:
+            return content
+        truncated = content[:max_length]
+        # Find last sentence-ending punctuation
+        for sep in ('. ', '.\n', '? ', '!\n'):
+            idx = truncated.rfind(sep)
+            if idx > max_length // 3:
+                return truncated[:idx + 1].strip()
+        # Fallback: truncate at last space to avoid mid-word cuts
+        idx = truncated.rfind(' ')
+        if idx > max_length // 3:
+            return truncated[:idx] + '...'
+        return truncated + '...'
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,

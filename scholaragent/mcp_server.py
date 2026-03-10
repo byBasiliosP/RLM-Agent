@@ -172,13 +172,20 @@ def _memory_store(
 
     entry = MemoryEntry(
         content=content,
-        summary=content[:200],
+        summary=MemoryEntry.smart_summary(content),
         source_type=source_type,
         source_ref=source,
         tags=tags,
     )
     store.add(entry)
     return {"status": "stored", "id": entry.id, "source_type": source_type}
+
+
+def _memory_get(store: MemoryStore, entry_id: str) -> dict:
+    entry = store.get(entry_id)
+    if entry is None:
+        return {"error": f"No entry found with id: {entry_id}"}
+    return entry.to_dict()
 
 
 def _memory_forget(
@@ -217,6 +224,20 @@ def memory_lookup(
         compact: Return summaries only (default True). Set False for full content.
     """
     result = _memory_lookup(_get_store(), query, sources, max_results, compact)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def memory_get(entry_id: str) -> str:
+    """Get the full content of a single memory entry by ID.
+
+    Use after memory_lookup to retrieve full details for a specific
+    result. This avoids loading all results into context at once.
+
+    Args:
+        entry_id: The entry ID from a memory_lookup result
+    """
+    result = _memory_get(_get_store(), entry_id)
     return json.dumps(result, indent=2)
 
 

@@ -66,8 +66,7 @@ class ResearchPipeline:
         # For quick depth, just index raw results
         entries_added = 0
         for raw in raw_results:
-            # TODO: use focus_hint for depth-level aware summarization
-            summary = raw["content"][:MAX_SUMMARY_LENGTH]
+            summary = MemoryEntry.smart_summary(raw["content"])
             entry = MemoryEntry(
                 content=raw["content"],
                 summary=summary,

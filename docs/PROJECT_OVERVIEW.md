@@ -28,7 +28,7 @@ The system has three layers:
 
 2. **The Memory Layer** --- a SQLite-backed semantic store with OpenAI embeddings that indexes every finding, enabling sub-second retrieval across sessions through cosine similarity search.
 
-3. **The MCP Interface** --- a FastMCP server exposing six tools (`memory_lookup`, `memory_research`, `memory_store`, `memory_forget`, `memory_status`, `memory_model_config`) that any MCP-compatible coding agent (Claude Code, Cursor, Windsurf, VS Code) can call to access research findings while writing code.
+3. **The MCP Interface** --- a FastMCP server exposing seven tools (`memory_lookup`, `memory_get`, `memory_research`, `memory_store`, `memory_forget`, `memory_status`, `memory_model_config`) that any MCP-compatible coding agent (Claude Code, Cursor, Windsurf, VS Code) can call to access research findings while writing code. The `memory_lookup` → `memory_get` pattern enables on-demand content retrieval, keeping the client's context window lean.
 
 A typical interaction looks like this:
 
@@ -103,7 +103,7 @@ A 7-day deduplication window prevents the system from re-researching the same to
 
 MCP, introduced by Anthropic in November 2024, is an open standard for connecting AI assistants to external data sources and tools. It draws inspiration from the Language Server Protocol (LSP), which standardized how editors communicate with language-specific tooling. MCP standardizes how AI applications communicate with context-providing servers.
 
-RLM Agent's MCP server exposes the memory layer as six tools that any MCP-compatible client can call. This means a developer using Claude Code, Cursor, or any MCP-enabled editor can invoke `memory_lookup("RLHF reward models")` while writing code and receive relevant research findings inline --- without leaving their editor or re-running a research pipeline.
+RLM Agent's MCP server exposes the memory layer as seven tools that any MCP-compatible client can call. This means a developer using Claude Code, Cursor, or any MCP-enabled editor can invoke `memory_lookup("RLHF reward models")` while writing code and receive relevant research findings inline --- without leaving their editor or re-running a research pipeline.
 
 The server uses FastMCP with stdio transport, making it trivially installable. Two installation methods are provided: a `scholaragent-install` CLI command (after `pip install scholaragent`) and a `install.sh` bash script. Both auto-detect installed editors (Claude Code, Cursor, Windsurf, VS Code) and register the server in their MCP configuration files. API keys are never stored in config files — they are inherited from the user's shell environment at runtime.
 
@@ -318,7 +318,7 @@ The project is packaged as a pip-installable Python package with two CLI entry p
 ```
 scholaragent/
 ├── __init__.py                  # Public API: ScholarAgent class
-├── mcp_server.py                # FastMCP server (6 tools)
+├── mcp_server.py                # FastMCP server (7 tools)
 ├── installer.py                 # CLI installer (scholaragent-install)
 ├── core/
 │   ├── agent.py                 # SpecialistAgent + RLM loop

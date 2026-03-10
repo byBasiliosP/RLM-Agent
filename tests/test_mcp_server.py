@@ -30,7 +30,7 @@ class TestMCPToolFunctions:
 
         return MemoryEntry(
             content=content,
-            summary=content[:200],
+            summary=MemoryEntry.smart_summary(content),
             source_type=source_type,
             source_ref=source_ref,
             tags=["test"],
@@ -234,6 +234,43 @@ class TestMCPToolFunctions:
         result = _memory_lookup(store=store, query="machine learning", compact=True)
         assert "relevance_score" in result["results"][0]
 
+    # ---- memory_get ----
+
+    def test_memory_get_returns_full_entry(self):
+        from scholaragent.mcp_server import _memory_get
+
+        store = self._make_store()
+        entry = self._make_entry("Full content about RLHF reward models")
+        store.add(entry)
+        result = _memory_get(store=store, entry_id=entry.id)
+        assert result["content"] == "Full content about RLHF reward models"
+        assert result["id"] == entry.id
+        assert "summary" in result
+
+    def test_memory_get_returns_error_for_missing_id(self):
+        from scholaragent.mcp_server import _memory_get
+
+        store = self._make_store()
+        result = _memory_get(store=store, entry_id="nonexistent-uuid")
+        assert "error" in result
+
+    def test_memory_get_lookup_flow(self):
+        """Test the browse-then-read pattern: lookup compact, then get full."""
+        from scholaragent.mcp_server import _memory_lookup, _memory_get
+
+        store = self._make_store()
+        entry = self._make_entry("Detailed content about attention mechanisms in transformers")
+        store.add(entry)
+
+        # Step 1: compact lookup
+        lookup = _memory_lookup(store=store, query="attention", compact=True)
+        assert "content" not in lookup["results"][0]
+        entry_id = lookup["results"][0]["id"]
+
+        # Step 2: get full content by ID
+        full = _memory_get(store=store, entry_id=entry_id)
+        assert full["content"] == "Detailed content about attention mechanisms in transformers"
+
     # ---- memory_forget ----
 
     def test_memory_forget_by_id(self):
@@ -378,6 +415,15 @@ class TestMCPToolJSONResponses:
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
         assert "results" in parsed
+
+    def test_memory_get_returns_valid_json(self):
+        self._patch_store()
+        from scholaragent.mcp_server import memory_get
+
+        result = memory_get(entry_id="nonexistent")
+        parsed = json.loads(result)
+        assert isinstance(parsed, dict)
+        assert "error" in parsed
 
     def test_memory_store_returns_valid_json(self):
         self._patch_store()

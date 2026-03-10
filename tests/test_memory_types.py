@@ -43,6 +43,45 @@ class TestMemoryEntry:
         with pytest.raises(ValueError, match="source_type"):
             MemoryEntry(content="x", summary="x", source_type="invalid", source_ref="x", tags=[])
 
+
+class TestSmartSummary:
+    def test_short_content_returned_unchanged(self):
+        from scholaragent.memory.types import MemoryEntry
+        assert MemoryEntry.smart_summary("Short text.") == "Short text."
+
+    def test_truncates_at_sentence_boundary(self):
+        from scholaragent.memory.types import MemoryEntry
+        content = "First sentence about RLHF. Second sentence about DPO. Third sentence that goes on and on and on and on and on and on and on to push us well past the two hundred character limit for summaries in the system."
+        result = MemoryEntry.smart_summary(content)
+        assert result.endswith('.')
+        assert len(result) <= 200
+        assert 'First sentence' in result
+
+    def test_falls_back_to_word_boundary_for_code(self):
+        from scholaragent.memory.types import MemoryEntry
+        content = "def train_reward_model(dataset, model, epochs=3):\n    optimizer = AdamW(model.parameters(), lr=1e-5)\n    for epoch in range(epochs):\n        for batch in dataset:\n            chosen, rejected = batch\n            loss = compute_loss(chosen, rejected)"
+        result = MemoryEntry.smart_summary(content)
+        assert result.endswith('...')
+        assert not result.endswith(' ...')  # no trailing space before ellipsis
+        assert len(result) <= 203  # 200 + '...'
+
+    def test_does_not_truncate_too_short(self):
+        from scholaragent.memory.types import MemoryEntry
+        # Sentence boundary is too early (less than 1/3 of max_length)
+        content = "Hi. " + "x" * 250
+        result = MemoryEntry.smart_summary(content)
+        # Should not truncate to just "Hi." (too short), should use word/char fallback
+        assert len(result) > 50
+
+    def test_exact_boundary(self):
+        from scholaragent.memory.types import MemoryEntry
+        content = "A" * 200
+        assert MemoryEntry.smart_summary(content) == content
+        content201 = "A" * 201
+        result = MemoryEntry.smart_summary(content201)
+        assert len(result) <= 203  # may have '...'
+
+
 class TestResearchLogEntry:
     def test_creation(self):
         from scholaragent.memory.types import ResearchLogEntry

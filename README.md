@@ -16,7 +16,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ./install.sh
 ```
 
-That's it. Restart your coding agent (Claude Code, Cursor, Windsurf, VS Code) and you'll have 6 new tools available.
+That's it. Restart your coding agent (Claude Code, Cursor, Windsurf, VS Code) and you'll have 7 new tools available.
 
 ## What It Does
 
@@ -37,7 +37,7 @@ Your Query
  Memory Store (SQLite + embeddings)
     |
     v
- MCP Server (6 tools for your coding agent)
+ MCP Server (7 tools for your coding agent)
 ```
 
 Papers are found on **arXiv** and **Semantic Scholar**. Code examples come from **GitHub**. Documentation comes from the web. Everything gets indexed with embeddings for fast semantic search.
@@ -48,7 +48,8 @@ Once installed, your coding agent gets these tools:
 
 | Tool | What It Does | Speed |
 |------|-------------|-------|
-| `memory_lookup` | Semantic search over everything ScholarAgent has ever found | ~100ms |
+| `memory_lookup` | Semantic search — returns compact summaries with IDs | ~100ms |
+| `memory_get` | Get full content of a single entry by ID (use after lookup) | instant |
 | `memory_research` | Run new research — searches papers, docs, code and indexes results | 5s - 5min |
 | `memory_store` | Manually save a finding, snippet, or insight for later | instant |
 | `memory_forget` | Remove stale entries by ID or semantic query | instant |
