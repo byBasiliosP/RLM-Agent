@@ -458,6 +458,233 @@ class TestMCPToolJSONResponses:
         assert "error" in parsed
 
 
+class TestContextStreamingWorkflow:
+    """End-to-end tests for the browse-then-read on-demand retrieval pattern.
+
+    Verifies that memory_lookup returns compact, high-quality summaries
+    and memory_get retrieves full content on demand — keeping the client
+    agent's context window lean.
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self, tmp_path):
+        self.db_path = str(tmp_path / "test_memory.db")
+        with patch.dict(os.environ, {"SCHOLAR_MEMORY_DB": self.db_path}):
+            yield
+
+    def _make_store(self):
+        from scholaragent.memory.store import MemoryStore
+
+        return MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
+
+    def _populate_store(self, store):
+        """Add realistic entries simulating papers, code, and docs."""
+        from scholaragent.memory.types import MemoryEntry
+
+        entries_data = [
+            (
+                "Reinforcement Learning from Human Feedback (RLHF) has emerged as "
+                "a powerful technique for aligning large language models with human "
+                "preferences. This paper surveys recent advances in RLHF, including "
+                "Direct Preference Optimization (DPO), which eliminates the need for "
+                "a separate reward model by directly optimizing the policy using "
+                "preference data. We compare RLHF, DPO, and other alignment methods "
+                "across multiple benchmarks.",
+                "paper",
+                "arxiv:2401.12345",
+                ["rlhf", "alignment"],
+            ),
+            (
+                "def train_reward_model(dataset, model, epochs=3):\n"
+                "    optimizer = AdamW(model.parameters(), lr=1e-5)\n"
+                "    for epoch in range(epochs):\n"
+                "        for batch in dataset:\n"
+                "            chosen, rejected = batch\n"
+                "            loss = -torch.log(torch.sigmoid(\n"
+                "                model(chosen) - model(rejected)))\n"
+                "            loss.backward()\n"
+                "            optimizer.step()\n"
+                "    return model",
+                "code",
+                "github:anthropic/rlhf-examples",
+                ["rlhf", "training"],
+            ),
+            (
+                "Flash Attention v2 achieves 2-4x speedup over standard attention "
+                "by tiling the computation to fit in GPU SRAM, avoiding materialization "
+                "of the full NxN attention matrix in HBM. Key insight: recompute "
+                "attention weights during backward pass instead of storing them, "
+                "trading FLOPs for memory bandwidth. Benchmarks show 3x speedup on "
+                "A100 GPUs for sequence lengths above 2048.",
+                "paper",
+                "arxiv:2307.08691",
+                ["attention", "efficiency"],
+            ),
+        ]
+
+        entries = []
+        for content, stype, sref, tags in entries_data:
+            entry = MemoryEntry(
+                content=content,
+                summary=MemoryEntry.smart_summary(content),
+                source_type=stype,
+                source_ref=sref,
+                tags=tags,
+            )
+            store.add(entry)
+            entries.append(entry)
+        return entries
+
+    def test_summaries_end_cleanly(self):
+        """All smart summaries must end at sentence boundaries or with ellipsis."""
+        store = self._make_store()
+        entries = self._populate_store(store)
+        for entry in entries:
+            summary = entry.summary
+            assert summary.endswith('.') or summary.endswith('...') or summary.endswith('?') or summary.endswith('!'), \
+                f"Summary has unclean ending: ...{summary[-20:]!r}"
+
+    def test_summaries_never_cut_mid_word(self):
+        """Summaries must not end with a partial word (no trailing letter fragments)."""
+        store = self._make_store()
+        entries = self._populate_store(store)
+        for entry in entries:
+            summary = entry.summary
+            # If truncated, should end with '.', '...', '?', or '!'
+            if len(entry.content) > 200:
+                assert summary[-1] in '.?!', \
+                    f"Long content summary should end with punctuation, got: ...{summary[-10:]!r}"
+
+    def test_compact_lookup_excludes_content(self):
+        """Compact lookup must not include full content in any result."""
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        self._populate_store(store)
+        result = _memory_lookup(store=store, query="RLHF alignment", compact=True)
+        for r in result["results"]:
+            assert "content" not in r, "Compact results must not contain 'content' field"
+            assert "summary" in r
+            assert "id" in r
+            assert "relevance_score" in r
+
+    def test_compact_is_smaller_than_full(self):
+        """Compact JSON payload must be meaningfully smaller than full."""
+        from scholaragent.mcp_server import _memory_lookup
+
+        store = self._make_store()
+        self._populate_store(store)
+
+        compact = _memory_lookup(store=store, query="RLHF", compact=True)
+        full = _memory_lookup(store=store, query="RLHF", compact=False)
+
+        compact_size = len(json.dumps(compact))
+        full_size = len(json.dumps(full))
+        assert compact_size < full_size, "Compact must be smaller than full"
+        # At least 20% reduction
+        assert compact_size < full_size * 0.8, \
+            f"Compact ({compact_size}) should be at least 20% smaller than full ({full_size})"
+
+    def test_browse_then_read_full_workflow(self):
+        """Complete workflow: browse summaries, pick best, read full content."""
+        from scholaragent.mcp_server import _memory_lookup, _memory_get
+
+        store = self._make_store()
+        entries = self._populate_store(store)
+
+        # Step 1: Browse — compact lookup
+        lookup = _memory_lookup(store=store, query="reward model training", compact=True)
+        assert len(lookup["results"]) > 0
+
+        # Verify compact format
+        for r in lookup["results"]:
+            assert "content" not in r
+            assert "id" in r
+            assert "summary" in r
+
+        # Step 2: Pick — select the best result by score
+        best = max(lookup["results"], key=lambda r: r["relevance_score"])
+        assert best["relevance_score"] > 0
+
+        # Step 3: Read — fetch full content by ID
+        full = _memory_get(store=store, entry_id=best["id"])
+        assert "error" not in full
+        assert "content" in full
+        assert len(full["content"]) > len(best["summary"])
+
+    def test_multiple_reads_accumulate_less_than_batch(self):
+        """Reading 1-2 entries on demand should use less payload than batch dump."""
+        from scholaragent.mcp_server import _memory_lookup, _memory_get
+
+        store = self._make_store()
+        self._populate_store(store)
+
+        # Batch dump
+        batch = json.dumps(_memory_lookup(store=store, query="RLHF", compact=False))
+
+        # On-demand: browse + read 1
+        browse = json.dumps(_memory_lookup(store=store, query="RLHF", compact=True))
+        best_id = max(
+            _memory_lookup(store=store, query="RLHF", compact=True)["results"],
+            key=lambda r: r["relevance_score"],
+        )["id"]
+        read_one = json.dumps(_memory_get(store=store, entry_id=best_id))
+
+        on_demand_total = len(browse) + len(read_one)
+        assert on_demand_total < len(batch), \
+            f"On-demand ({on_demand_total}) should be less than batch ({len(batch)})"
+
+    def test_memory_get_preserves_all_fields(self):
+        """memory_get must return all fields including content, tags, created_at."""
+        from scholaragent.mcp_server import _memory_get
+
+        store = self._make_store()
+        entries = self._populate_store(store)
+        entry = entries[0]
+
+        full = _memory_get(store=store, entry_id=entry.id)
+        assert full["id"] == entry.id
+        assert full["content"] == entry.content
+        assert full["summary"] == entry.summary
+        assert full["source_type"] == entry.source_type
+        assert full["source_ref"] == entry.source_ref
+        assert "tags" in full
+        assert "created_at" in full
+        assert "access_count" in full
+
+    def test_code_summary_uses_ellipsis(self):
+        """Code content (no sentence endings) should use word-boundary + ellipsis."""
+        from scholaragent.memory.types import MemoryEntry
+
+        code = (
+            "def process_batch(data, config):\n"
+            "    results = []\n"
+            "    for item in data:\n"
+            "        transformed = apply_transform(item, config.transform)\n"
+            "        validated = validate_output(transformed, config.schema)\n"
+            "        results.append(validated)\n"
+            "    return aggregate_results(results, config.aggregation_method)"
+        )
+        summary = MemoryEntry.smart_summary(code)
+        assert summary.endswith("..."), f"Code summary should end with '...', got: {summary[-10:]!r}"
+
+    def test_paper_summary_uses_sentence_boundary(self):
+        """Paper abstracts should truncate at sentence boundaries."""
+        from scholaragent.memory.types import MemoryEntry
+
+        abstract = (
+            "We introduce a novel approach to neural network pruning. "
+            "Our method uses gradient sensitivity analysis to identify "
+            "redundant parameters. Experiments on GPT-2 show 4x compression "
+            "with less than 1 percent accuracy loss. This makes deployment "
+            "on edge devices practical for the first time."
+        )
+        summary = MemoryEntry.smart_summary(abstract)
+        assert summary.endswith("."), f"Paper summary should end with '.', got: {summary[-10:]!r}"
+        # Should not include the last sentence (would exceed 200 chars)
+        assert len(summary) <= 200
+
+
 class TestMCPCleanup:
     """Test the atexit cleanup handler."""
 
