@@ -234,7 +234,7 @@ The memory layer uses SQLite rather than a vector database (Pinecone, Weaviate, 
 
 ### 5.5 Why MCP for Integration
 
-The MCP server design was chosen over alternatives (REST API, CLI wrapper, Python library import) because MCP is the emerging standard for AI-tool integration. By exposing the memory layer as MCP tools, any MCP-compatible editor or agent can access research findings without custom integration code. As MCP adoption grows (OpenAI adopted it in March 2025, Google DeepMind confirmed support in April 2025), RLM Agent becomes accessible to an increasingly broad ecosystem.
+The MCP server design was chosen over alternatives (REST API, CLI wrapper, Python library import) because MCP is the emerging standard for AI-tool integration. By exposing the memory layer as MCP tools, any MCP-compatible editor or agent can access research findings without custom integration code. As MCP adoption grows — OpenAI adopted it in March 2025 ([OpenAI, "Agents SDK"](https://openai.com/index/new-tools-for-building-agents/)) and Google DeepMind confirmed support in April 2025 ([Google DeepMind Blog](https://developers.googleblog.com/en/gemini-api-and-google-ai-studio-now-offer-mcp-support/)) — RLM Agent becomes accessible to an increasingly broad ecosystem.
 
 ---
 
@@ -301,11 +301,17 @@ The project is packaged as a pip-installable Python package with two CLI entry p
 
 - Model Context Protocol Specification. (2025). https://modelcontextprotocol.io/specification/2025-11-25
 
+- OpenAI. (2025). *New Tools for Building Agents.* https://openai.com/index/new-tools-for-building-agents/
+
+- Google Developers Blog. (2025). *Gemini API and Google AI Studio Now Offer MCP Support.* https://developers.googleblog.com/en/gemini-api-and-google-ai-studio-now-offer-mcp-support/
+
 ### Data Sources
 
-- Semantic Scholar Academic Graph API. https://www.semanticscholar.org/product/api
+- Semantic Scholar Academic Graph API. Allen Institute for AI. https://www.semanticscholar.org/product/api
 
-- arXiv API. https://info.arxiv.org/help/api/index.html
+- arXiv API. Cornell University. https://info.arxiv.org/help/api/index.html
+
+- GitHub REST API. GitHub / Microsoft. https://docs.github.com/en/rest
 
 ### Alignment Research (Domain Context)
 
@@ -367,3 +373,41 @@ scholaragent/
 └── docs/
     └── plans/                   # Design docs and implementation plans
 ```
+
+---
+
+## 10. Acknowledgements
+
+### Frameworks & Tools
+
+- **[RLM](https://github.com/alexzhang13/rlm)** — The Recursive Language Model reference implementation by Alex Zhang, Tim Kraska, and Omar Khattab at MIT CSAIL. The REPL-driven agent loop, scaffold immutability pattern, and recursive decomposition approach used throughout ScholarAgent are directly derived from this work.
+
+- **[Model Context Protocol (MCP)](https://modelcontextprotocol.io)** — Open standard introduced by [Anthropic (November 2024)](https://www.anthropic.com/news/model-context-protocol) for connecting AI assistants to external tools and data sources. ScholarAgent's integration layer is built on the MCP specification.
+
+- **[FastMCP](https://github.com/jlowin/fastmcp)** — Python MCP server framework by Jeremiah Lowin, used to expose ScholarAgent's memory layer as MCP tools.
+
+### Data Sources & APIs
+
+- **[arXiv](https://arxiv.org/)** — Open-access repository of scientific preprints, operated by Cornell University. Paper discovery relies on the [arXiv API](https://info.arxiv.org/help/api/index.html).
+
+- **[Semantic Scholar](https://www.semanticscholar.org/)** — Academic search engine and citation graph maintained by the [Allen Institute for AI (AI2)](https://allenai.org/). Used via the [Semantic Scholar Academic Graph API](https://www.semanticscholar.org/product/api) for paper metadata and citation/reference graph traversal.
+
+- **[GitHub REST API](https://docs.github.com/en/rest)** — Code search integration provided by GitHub (Microsoft). Used for discovering implementation examples.
+
+### LLM Providers
+
+- **[OpenAI](https://openai.com/)** — GPT-4o, GPT-4o-mini, and text-embedding-3-small models accessed via the [OpenAI Python SDK](https://github.com/openai/openai-python).
+
+- **[Anthropic](https://www.anthropic.com/)** — Claude Sonnet model accessed via the [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python).
+
+- **[LM Studio](https://lmstudio.ai/)** — Local inference runtime for running open-weight models with an OpenAI-compatible API.
+
+### Key Libraries
+
+- **[httpx](https://www.python-httpx.org/)** — HTTP client with connection pooling (Tom Christie / [Encode](https://www.encode.io/))
+- **[Rich](https://github.com/Textualize/rich)** — Terminal formatting and logging (Will McGugan / [Textualize](https://www.textualize.io/))
+- **[NumPy](https://numpy.org/)** — Numerical operations for cosine similarity computation (NumPy community)
+- **[pypdf](https://github.com/py-pdf/pypdf)** — PDF text extraction (pypdf community)
+- **[Trafilatura](https://trafilatura.readthedocs.io/)** — Web text extraction and HTML-to-text conversion (Adrien Barbaresi, [BBAW](https://www.bbaw.de/))
+- **[pytest](https://docs.pytest.org/)** — Test framework (Holger Krekel and pytest contributors)
+- **[Hatchling](https://hatch.pypa.io/)** — Python build backend (Ofek Lev)
