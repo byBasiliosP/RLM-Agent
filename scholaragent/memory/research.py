@@ -329,61 +329,62 @@ class ResearchPipeline:
         query: str,
         sources: list[str] | None = None,
     ) -> tuple[list[dict], list[str]]:
-        """Collect raw results from all source adapters concurrently."""
+        """Collect raw results from all source adapters sequentially.
+
+        Each source has a dedicated httpx.Client at module level.
+        We fetch sequentially to avoid thread-safety issues with httpx.Client,
+        which is not safe for concurrent use across threads.
+        """
         sources = sources or ["paper", "code", "docs"]
         results = []
         errors = []
 
-        def _fetch_arxiv():
-            arxiv_json = search_arxiv(query, max_results=10)
-            arxiv_papers = json.loads(arxiv_json)
-            items = []
-            if isinstance(arxiv_papers, list):
-                for paper in arxiv_papers:
-                    items.append({
-                        "content": f"Title: {paper.get('title', '')}\n\nAbstract: {paper.get('abstract', '')}\n\nAuthors: {', '.join(paper.get('authors', []))}",
-                        "source_type": "paper",
-                        "source_ref": f"arxiv:{paper.get('arxiv_id', '')}",
-                    })
-            return items
+        if "paper" in sources:
+            # arXiv
+            try:
+                arxiv_json = search_arxiv(query, max_results=10)
+                arxiv_papers = json.loads(arxiv_json)
+                if isinstance(arxiv_papers, list):
+                    for paper in arxiv_papers:
+                        results.append({
+                            "content": f"Title: {paper.get('title', '')}\n\nAbstract: {paper.get('abstract', '')}\n\nAuthors: {', '.join(paper.get('authors', []))}",
+                            "source_type": "paper",
+                            "source_ref": f"arxiv:{paper.get('arxiv_id', '')}",
+                        })
+            except Exception as e:
+                logger.warning("arXiv search failed: %s", e)
+                errors.append(f"arXiv: {type(e).__name__}: {e}")
 
-        def _fetch_s2():
-            s2_json = search_semantic_scholar(query, limit=10)
-            s2_papers = json.loads(s2_json)
-            items = []
-            if isinstance(s2_papers, list):
-                for paper in s2_papers:
-                    items.append({
-                        "content": f"Title: {paper.get('title', '')}\n\nAbstract: {paper.get('abstract', '')}\n\nYear: {paper.get('year', 'N/A')}\nCitations: {paper.get('citation_count', 0)}",
-                        "source_type": "paper",
-                        "source_ref": f"s2:{paper.get('paper_id', '')}",
-                    })
-            return items
+            # Semantic Scholar
+            try:
+                s2_json = search_semantic_scholar(query, limit=10)
+                s2_papers = json.loads(s2_json)
+                if isinstance(s2_papers, list):
+                    for paper in s2_papers:
+                        results.append({
+                            "content": f"Title: {paper.get('title', '')}\n\nAbstract: {paper.get('abstract', '')}\n\nYear: {paper.get('year', 'N/A')}\nCitations: {paper.get('citation_count', 0)}",
+                            "source_type": "paper",
+                            "source_ref": f"s2:{paper.get('paper_id', '')}",
+                        })
+            except Exception as e:
+                logger.warning("S2 search failed: %s", e)
+                errors.append(f"Semantic Scholar: {type(e).__name__}: {e}")
 
-        def _fetch_github():
-            return search_github_code(query, language="python", max_results=5)
+        if "code" in sources:
+            try:
+                code_results = search_github_code(query, language="python", max_results=5)
+                results.extend(code_results)
+            except Exception as e:
+                logger.warning("GitHub search failed: %s", e)
+                errors.append(f"GitHub: {type(e).__name__}: {e}")
 
-        def _fetch_docs():
-            return search_docs(query, max_results=3)
-
-        tasks = {}
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            if "paper" in sources:
-                tasks[executor.submit(_fetch_arxiv)] = "arXiv"
-                tasks[executor.submit(_fetch_s2)] = "Semantic Scholar"
-            if "code" in sources:
-                tasks[executor.submit(_fetch_github)] = "GitHub"
-            if "docs" in sources:
-                tasks[executor.submit(_fetch_docs)] = "Docs"
-
-            for future in as_completed(tasks):
-                label = tasks[future]
-                try:
-                    items = future.result(timeout=60)
-                    results.extend(items)
-                except Exception as e:
-                    logger.warning("Source %s failed: %s", label, e)
-                    errors.append(f"{label}: {type(e).__name__}: {e}")
+        if "docs" in sources:
+            try:
+                doc_results = search_docs(query, max_results=3)
+                results.extend(doc_results)
+            except Exception as e:
+                logger.warning("Docs search failed: %s", e)
+                errors.append(f"Docs: {type(e).__name__}: {e}")
 
         return results, errors
 

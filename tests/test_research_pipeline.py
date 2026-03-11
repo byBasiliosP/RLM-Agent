@@ -147,37 +147,36 @@ class TestResearchPipeline:
             assert len(result["errors"]) == 4
 
 
-class TestConcurrentCollection:
-    def test_sources_collected_concurrently(self, store, monkeypatch):
-        """Source adapters should run in parallel, not sequentially."""
-        def slow_arxiv(query, max_results=10):
-            time.sleep(0.2)
+class TestSequentialCollection:
+    def test_sources_collected_sequentially(self, store, monkeypatch):
+        """Source adapters run sequentially to avoid httpx thread-safety issues."""
+        call_order = []
+
+        def mock_arxiv(query, max_results=10):
+            call_order.append("arxiv")
             return "[]"
 
-        def slow_s2(query, limit=10):
-            time.sleep(0.2)
+        def mock_s2(query, limit=10):
+            call_order.append("s2")
             return "[]"
 
-        def slow_github(query, language=None, max_results=10):
-            time.sleep(0.2)
+        def mock_github(query, language=None, max_results=10):
+            call_order.append("github")
             return []
 
-        def slow_docs(query, max_results=5):
-            time.sleep(0.2)
+        def mock_docs(query, max_results=5):
+            call_order.append("docs")
             return []
 
         import scholaragent.memory.research as mod
-        monkeypatch.setattr(mod, "search_arxiv", slow_arxiv)
-        monkeypatch.setattr(mod, "search_semantic_scholar", slow_s2)
-        monkeypatch.setattr(mod, "search_github_code", slow_github)
-        monkeypatch.setattr(mod, "search_docs", slow_docs)
+        monkeypatch.setattr(mod, "search_arxiv", mock_arxiv)
+        monkeypatch.setattr(mod, "search_semantic_scholar", mock_s2)
+        monkeypatch.setattr(mod, "search_github_code", mock_github)
+        monkeypatch.setattr(mod, "search_docs", mock_docs)
 
         from scholaragent.memory.research import ResearchPipeline
         pipeline = ResearchPipeline(store=store)
-        t0 = time.monotonic()
         pipeline._collect_sources("test query")
-        elapsed = time.monotonic() - t0
 
-        # 4 sources x 0.2s each = 0.8s sequential.
-        # Concurrent should complete in ~0.25s (0.2s + overhead).
-        assert elapsed < 0.5, f"Sources collected sequentially ({elapsed:.2f}s)"
+        # All sources should be called in deterministic order
+        assert call_order == ["arxiv", "s2", "github", "docs"]
