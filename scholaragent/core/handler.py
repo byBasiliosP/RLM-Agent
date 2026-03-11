@@ -65,6 +65,7 @@ class LMHandler:
         port: int = 0,
         token_counter: TokenCounter | None = None,
         verbose: bool = False,
+        cache: "LLMCache | None" = None,
     ):
         self.default_client = client
         self.clients: dict[str, BaseLM] = {client.model_name: client}
@@ -74,6 +75,7 @@ class LMHandler:
         self._port = port
         self.token_counter = token_counter
         self.verbose = verbose
+        self.cache = cache
 
     # ----- client registry ---------------------------------------------------
 
@@ -133,8 +135,20 @@ class LMHandler:
     def completion_messages(self, messages: list[dict[str, str]], model: str | None = None) -> str:
         """Direct (in-process) completion preserving message roles."""
         client = self.get_client(model)
+
+        # Check cache
+        if self.cache is not None:
+            cached = self.cache.get(client.model_name, messages)
+            if cached is not None:
+                return cached
+
         result = client.completion_messages(messages)
         self._record_usage(client)
+
+        # Store in cache
+        if self.cache is not None:
+            self.cache.put(client.model_name, messages, result)
+
         return result
 
     def _record_usage(self, client: BaseLM) -> None:

@@ -33,6 +33,22 @@ class TokenCounter:
             m.total_tokens += total
             m.calls += 1
 
+    def cost_summary(self) -> dict:
+        """Return per-model costs and total cost in USD."""
+        from scholaragent.utils.cost import estimate_cost
+
+        with self._lock:
+            model_costs = {}
+            total_cost = 0.0
+            for name, m in self._models.items():
+                cost = estimate_cost(name, m.prompt_tokens, m.completion_tokens)
+                model_costs[name] = round(cost, 6)
+                total_cost += cost
+            return {
+                "model_costs": model_costs,
+                "total_cost_usd": round(total_cost, 6),
+            }
+
     def summary(self) -> dict:
         """Return per-model and total token counts."""
         with self._lock:
@@ -65,21 +81,24 @@ class TokenCounter:
         print(f"  [tokens] {model}: {prompt_tokens} in + {completion_tokens} out = {total} total")
 
     def report(self) -> str:
-        """Return formatted end-of-run summary."""
+        """Return formatted end-of-run summary with costs."""
         s = self.summary()
+        costs = self.cost_summary()
         if not s["models"]:
             return "No LLM calls recorded."
         lines = ["", "=== Token Usage Summary ==="]
         for name, m in s["models"].items():
+            cost_str = f"${costs['model_costs'].get(name, 0):.4f}"
             lines.append(
                 f"  {name}: {m['calls']} calls, "
                 f"{m['prompt_tokens']} prompt + {m['completion_tokens']} completion "
-                f"= {m['total_tokens']} total"
+                f"= {m['total_tokens']} total, {cost_str}"
             )
         t = s["total"]
         lines.append(f"  ────────────────────────")
         lines.append(
-            f"  TOTAL: {t['calls']} calls, {t['total_tokens']} tokens"
+            f"  TOTAL: {t['calls']} calls, {t['total_tokens']} tokens, "
+            f"${costs['total_cost_usd']:.4f}"
         )
         lines.append("")
         return "\n".join(lines)

@@ -10,12 +10,16 @@ dependencies = [
     "anthropic>=0.40",
     "mcp[cli]>=1.0",
     "numpy>=1.26",
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+]
+extraction = [
+    "trafilatura>=1.8.0",
 ]
 
 [project.scripts]

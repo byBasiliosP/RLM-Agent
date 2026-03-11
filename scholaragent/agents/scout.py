@@ -2,11 +2,13 @@
 
 from scholaragent.core.agent import SpecialistAgent
 from scholaragent.tools.arxiv import search_arxiv
+from scholaragent.tools.pdf_extractor import fetch_arxiv_pdf
 from scholaragent.tools.semantic_scholar import (
     get_citations,
     get_references,
     search_semantic_scholar,
 )
+from scholaragent.sources.github import search_github_code
 
 
 class ScoutAgent(SpecialistAgent):
@@ -25,6 +27,10 @@ class ScoutAgent(SpecialistAgent):
 - search_semantic_scholar(query, limit=10) -> JSON string of Semantic Scholar papers
 - get_citations(paper_id, limit=20) -> JSON string of papers citing a given paper
 - get_references(paper_id, limit=20) -> JSON string of papers referenced by a given paper
+- fetch_arxiv_pdf(arxiv_id) -> JSON string with extracted full text from an arXiv PDF.
+  Use sparingly (3s rate limit per download). Only fetch for the top 2-3 most relevant papers.
+- search_github_code(query, language="python", max_results=5) -> list of code snippet dicts.
+  Use when the focus is "implementation" to find practical code examples.
 
 ## Search strategy
 1. Generate 2-3 query variations (synonyms, related terms) for broader coverage.
@@ -63,4 +69,6 @@ Store the JSON string in a variable and call FINAL_VAR(variable_name) to return 
             "search_semantic_scholar": search_semantic_scholar,
             "get_citations": get_citations,
             "get_references": get_references,
+            "fetch_arxiv_pdf": fetch_arxiv_pdf,
+            "search_github_code": search_github_code,
         }

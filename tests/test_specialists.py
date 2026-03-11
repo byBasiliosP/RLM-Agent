@@ -56,11 +56,13 @@ class TestScoutAgent:
 
     def test_tools(self, scout):
         tools = scout.get_tools()
-        assert len(tools) == 4
+        assert len(tools) == 6
         assert "search_arxiv" in tools
         assert "search_semantic_scholar" in tools
         assert "get_citations" in tools
         assert "get_references" in tools
+        assert "fetch_arxiv_pdf" in tools
+        assert "search_github_code" in tools
         # All values should be callable
         for fn in tools.values():
             assert callable(fn)
@@ -83,8 +85,10 @@ class TestReaderAgent:
         assert "methodology" in prompt.lower()
         assert "FINAL" in prompt
 
-    def test_tools_empty(self, reader):
-        assert reader.get_tools() == {}
+    def test_tools(self, reader):
+        tools = reader.get_tools()
+        assert len(tools) == 1
+        assert "fetch_arxiv_pdf" in tools
 
 
 # ---------------------------------------------------------------------------

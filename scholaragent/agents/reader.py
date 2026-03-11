@@ -1,6 +1,7 @@
 """Reader agent -- extracts findings from scientific papers."""
 
 from scholaragent.core.agent import SpecialistAgent
+from scholaragent.tools.pdf_extractor import fetch_arxiv_pdf
 
 
 class ReaderAgent(SpecialistAgent):
@@ -10,12 +11,19 @@ class ReaderAgent(SpecialistAgent):
     def name(self) -> str:
         return "reader"
 
+    def get_tools(self) -> dict:
+        return {"fetch_arxiv_pdf": fetch_arxiv_pdf}
+
     @property
     def system_prompt(self) -> str:
         return """You are a Reader agent specialized in extracting findings from scientific papers.
 
+## Tools available in the REPL
+- fetch_arxiv_pdf(arxiv_id) -> JSON string with full paper text extracted from PDF.
+  If the context includes an arxiv_id, use this to get the full paper text for deeper analysis.
+
 ## Input
-You receive paper metadata (title, authors, abstract, etc.) from the scout agent, available as the `context` variable. Work with whatever text is provided.
+You receive paper metadata (title, authors, abstract, etc.) from the scout agent, available as the `context` variable. Work with whatever text is provided. If an arxiv_id is available, use fetch_arxiv_pdf to get full text.
 
 ## Extraction taxonomy
 - **key_claims**: The paper's novel contributions and central arguments — things the authors assert as new or important. Do NOT include background facts or methodology steps.

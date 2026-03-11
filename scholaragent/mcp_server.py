@@ -50,7 +50,11 @@ VALID_FOCUSES = frozenset({"implementation", "theory", "comparison"})
 
 _store: MemoryStore | None = None
 _pipeline: ResearchPipeline | None = None
+_agent_handler = None  # LMHandler, lazy-init
+_agent_registry = None  # AgentRegistry, lazy-init
+_agent_dispatcher = None  # Dispatcher, lazy-init
 _init_lock = threading.Lock()
+_agent_lock = threading.Lock()
 
 DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
 DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
@@ -114,6 +118,73 @@ def _get_pipeline() -> ResearchPipeline:
         return _pipeline
 
 
+def _get_agent_infra():
+    """Lazy-init agent infrastructure for normal/deep depth levels (thread-safe).
+
+    Returns (handler, registry, dispatcher).
+    """
+    global _agent_handler, _agent_registry, _agent_dispatcher
+    if _agent_handler is not None:
+        return _agent_handler, _agent_registry, _agent_dispatcher
+
+    with _agent_lock:
+        if _agent_handler is not None:
+            return _agent_handler, _agent_registry, _agent_dispatcher
+
+        from scholaragent.clients.router import ModelConfig, ModelRouter
+        from scholaragent.clients.token_counter import TokenCounter
+        from scholaragent.core.handler import LMHandler
+        from scholaragent.core.registry import AgentRegistry
+        from scholaragent.core.dispatcher import Dispatcher
+        from scholaragent.agents.scout import ScoutAgent
+        from scholaragent.agents.reader import ReaderAgent
+        from scholaragent.agents.critic import CriticAgent
+        from scholaragent.agents.analyst import AnalystAgent
+        from scholaragent.agents.synthesizer import SynthesizerAgent
+
+        config = _build_model_config()
+        router = ModelRouter(
+            strong=ModelConfig(**config["strong"]),
+            cheap=ModelConfig(**config["cheap"]),
+        )
+
+        token_counter = TokenCounter()
+        strong_client = router.get_client("dispatcher")
+        handler = LMHandler(
+            client=strong_client,
+            token_counter=token_counter,
+            verbose=False,
+        )
+        cheap_client = router.get_client("scout")
+        handler.register_client(cheap_client.model_name, cheap_client)
+        handler.start()
+
+        registry = AgentRegistry()
+        registry.register(ScoutAgent())
+        registry.register(ReaderAgent())
+        registry.register(CriticAgent())
+        registry.register(AnalystAgent())
+        registry.register(SynthesizerAgent())
+
+        dispatcher = Dispatcher(registry=registry, handler=handler)
+
+        _agent_handler = handler
+        _agent_registry = registry
+        _agent_dispatcher = dispatcher
+
+        atexit.register(handler.stop)
+        logger.info("Initialized agent infrastructure: %s", registry.list_agents())
+        return handler, registry, dispatcher
+
+
+def _ensure_pipeline_agents(pipeline: ResearchPipeline) -> None:
+    """Upgrade a pipeline with agent infrastructure if not already set."""
+    if pipeline.has_agent_infra:
+        return
+    handler, registry, dispatcher = _get_agent_infra()
+    pipeline.set_agent_infra(handler, registry, dispatcher)
+
+
 # --- Tool handler functions (testable without MCP transport) ---
 
 
@@ -150,6 +221,13 @@ def _memory_research(
         return {"error": f"depth must be one of {sorted(VALID_DEPTHS)}"}
     if focus not in VALID_FOCUSES:
         return {"error": f"focus must be one of {sorted(VALID_FOCUSES)}"}
+    # Upgrade pipeline with agent infrastructure for normal/deep depths
+    if depth != "quick":
+        try:
+            _ensure_pipeline_agents(pipeline)
+        except Exception as e:
+            logger.warning("Failed to init agent infra, falling back to quick: %s", e)
+            depth = "quick"
     return pipeline.run(query=query, depth=depth, focus=focus)
 
 
@@ -197,7 +275,14 @@ def _memory_forget(
 
 
 def _memory_status(store: MemoryStore) -> dict:
-    return store.status()
+    status = store.status()
+    # Include token usage and cost info if agent infrastructure is active
+    if _agent_handler is not None and hasattr(_agent_handler, "token_counter"):
+        tc = _agent_handler.token_counter
+        if tc is not None:
+            status["token_usage"] = tc.summary()
+            status["estimated_costs"] = tc.cost_summary()
+    return status
 
 
 # --- MCP Server ---

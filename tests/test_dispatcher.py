@@ -53,6 +53,7 @@ class EchoAgent(SpecialistAgent):
         max_iterations: int = 10,
         agent_call_fn=None,
         verbose: bool = False,
+        budget=None,
     ) -> AgentResult:
         return AgentResult(
             agent_name="echo",
@@ -81,6 +82,7 @@ class FailingAgent(SpecialistAgent):
         max_iterations: int = 10,
         agent_call_fn=None,
         verbose: bool = False,
+        budget=None,
     ) -> AgentResult:
         return AgentResult(
             agent_name="failing",

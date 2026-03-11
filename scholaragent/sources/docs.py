@@ -16,7 +16,15 @@ MAX_DOC_CONTENT_LENGTH = 10_000
 
 
 def _html_to_text(html: str) -> str:
-    """Simple HTML to text conversion. Strips tags, normalizes whitespace."""
+    """Extract text from HTML. Uses trafilatura if available, falls back to regex."""
+    try:
+        import trafilatura
+        result = trafilatura.extract(html, include_comments=False, include_tables=True)
+        if result:
+            return result
+    except ImportError:
+        pass
+    # Fallback: regex-based tag stripping
     text = re.sub(r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
