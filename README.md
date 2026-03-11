@@ -239,11 +239,42 @@ python -m pytest tests/ -v
 python -m pytest tests/test_store.py -v
 ```
 
-## Built On
+## Citations & Acknowledgements
 
-- [RLM](https://github.com/alexzhang13/rlm) — REPL-driven LM orchestration patterns
-- [MCP](https://modelcontextprotocol.io) — Model Context Protocol for agent interoperability
-- [FastMCP](https://github.com/jlowin/fastmcp) — Python MCP server framework
+### Research Foundations
+
+ScholarAgent is built on ideas from the following academic work:
+
+- **Recursive Language Models (RLM)** — Zhang, A. L., Kraska, T., & Khattab, O. (2026). *Recursive Language Models.* arXiv:2512.24601. [https://arxiv.org/abs/2512.24601](https://arxiv.org/abs/2512.24601)
+  The core REPL-driven orchestration paradigm. Every agent loop in ScholarAgent follows the RLM pattern of code generation → execution → observation → iteration.
+
+- **ReAct** — Yao, S., Zhao, J., Yu, D., et al. (2023). *ReAct: Synergizing Reasoning and Acting in Language Models.* ICLR 2023. arXiv:2210.03629. [https://arxiv.org/abs/2210.03629](https://arxiv.org/abs/2210.03629)
+  The thought–action–observation loop that underpins agent reasoning.
+
+- **Multi-Agent Systems** — Guo, T., et al. (2024). *Large Language Model based Multi-Agents: A Survey of Progress and Challenges.* IJCAI 2024. arXiv:2402.01680. [https://arxiv.org/abs/2402.01680](https://arxiv.org/abs/2402.01680); Li, S., et al. (2024). arXiv:2412.17481. [https://arxiv.org/abs/2412.17481](https://arxiv.org/abs/2412.17481)
+  Surveys informing the five-agent specialist architecture.
+
+### Frameworks & Protocols
+
+- [RLM](https://github.com/alexzhang13/rlm) — REPL-driven LM orchestration patterns (Zhang et al., MIT CSAIL)
+- [MCP](https://modelcontextprotocol.io) — Model Context Protocol for agent interoperability ([Anthropic, 2024](https://www.anthropic.com/news/model-context-protocol))
+- [FastMCP](https://github.com/jlowin/fastmcp) — Python MCP server framework by Jeremiah Lowin
+
+### Data Sources
+
+- [arXiv API](https://info.arxiv.org/help/api/index.html) — Open access to scientific papers (operated by Cornell University)
+- [Semantic Scholar Academic Graph API](https://www.semanticscholar.org/product/api) — Paper metadata and citation graphs (Allen Institute for AI)
+- [GitHub REST API](https://docs.github.com/en/rest) — Code search (GitHub / Microsoft)
+
+### Key Libraries
+
+- [OpenAI Python SDK](https://github.com/openai/openai-python) — LLM and embedding API client (OpenAI)
+- [Anthropic Python SDK](https://github.com/anthropics/anthropic-sdk-python) — LLM API client (Anthropic)
+- [httpx](https://www.python-httpx.org/) — Async HTTP client (Encode)
+- [Rich](https://github.com/Textualize/rich) — Terminal formatting (Will McGugan / Textualize)
+- [NumPy](https://numpy.org/) — Numerical operations (NumPy community)
+- [pypdf](https://github.com/py-pdf/pypdf) — PDF text extraction (pypdf community)
+- [Trafilatura](https://trafilatura.readthedocs.io/) — Web text extraction (Adrien Barbaresi)
 
 ## License
 
