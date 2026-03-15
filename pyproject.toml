@@ -39,6 +39,7 @@ dependencies = [
     "anthropic>=0.40",
     "mcp[cli]>=1.0",
     "numpy>=1.26",
+    "playwright>=1.40.0",
     "pypdf>=4.0",
 ]
 
