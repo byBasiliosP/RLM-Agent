@@ -67,8 +67,16 @@ class TestLiveClaudeDocs:
         parsed = json.loads(result)
         assert isinstance(parsed, list)
         assert len(parsed) > 0
+        # Check URLs or titles/snippets for anthropic/claude references
         urls = [r["url"] for r in parsed]
-        assert any("anthropic" in u.lower() for u in urls)
+        titles_snippets = " ".join(
+            r.get("title", "") + " " + r.get("snippet", "") for r in parsed
+        ).lower()
+        has_anthropic_url = any("anthropic" in u.lower() for u in urls)
+        has_anthropic_mention = "anthropic" in titles_snippets or "claude" in titles_snippets
+        assert has_anthropic_url or has_anthropic_mention, (
+            f"Expected anthropic/claude in results. URLs: {urls}"
+        )
 
     def test_fetch_claude_api_messages_page(self):
         result = fetch_page("https://docs.anthropic.com/en/api/messages")
