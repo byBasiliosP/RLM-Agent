@@ -13,6 +13,7 @@ from scholaragent.utils.prompts import DISPATCHER_SYSTEM_PROMPT
 
 if TYPE_CHECKING:
     from scholaragent.utils.budget import Budget
+    from scholaragent.memory.store import MemoryStore
 
 
 class Dispatcher(SpecialistAgent):
@@ -29,14 +30,20 @@ class Dispatcher(SpecialistAgent):
         registry: AgentRegistry,
         handler: LMHandler,
         budget: Budget | None = None,
+        store: MemoryStore | None = None,
     ):
         self._registry = registry
         self._handler = handler
         self._budget = budget
+        self._store = store
 
     @property
     def name(self) -> str:
         return "dispatcher"
+
+    def set_store(self, store: MemoryStore) -> None:
+        """Attach a MemoryStore so dispatched agents can use memory tools."""
+        self._store = store
 
     @property
     def system_prompt(self) -> str:
@@ -69,6 +76,7 @@ class Dispatcher(SpecialistAgent):
             handler=self._handler,
             max_iterations=10,
             budget=sub_budget,
+            store=self._store,
         )
 
         # Roll up sub-budget usage to dispatcher budget

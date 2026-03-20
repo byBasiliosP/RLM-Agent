@@ -77,6 +77,9 @@ class ResearchPipeline:
         self.handler = handler
         self.registry = registry
         self.dispatcher = dispatcher
+        # Ensure dispatcher has access to the store for in-loop memory tools
+        if self.dispatcher._store is None:
+            self.dispatcher.set_store(self.store)
 
     def run(
         self,
@@ -155,6 +158,7 @@ class ResearchPipeline:
                 task=f"Find the most relevant papers, code, and documentation about: {query}{task_suffix}",
                 handler=self.handler,
                 max_iterations=8,
+                store=self.store,
             )
             if not scout_result.success:
                 logger.warning("Scout failed, falling back to quick: %s", scout_result.result)
@@ -276,6 +280,7 @@ class ResearchPipeline:
                     task=reader_task,
                     handler=self.handler,
                     max_iterations=6,
+                    store=self.store,
                 )
                 if reader_result.success:
                     enriched["reader_findings"] = reader_result.result
@@ -294,6 +299,7 @@ class ResearchPipeline:
                     task=critic_task,
                     handler=self.handler,
                     max_iterations=6,
+                    store=self.store,
                 )
                 if critic_result.success:
                     enriched["critic_assessment"] = critic_result.result
