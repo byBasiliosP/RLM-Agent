@@ -54,6 +54,7 @@ class EchoAgent(SpecialistAgent):
         agent_call_fn=None,
         verbose: bool = False,
         budget=None,
+        store=None,
     ) -> AgentResult:
         return AgentResult(
             agent_name="echo",
@@ -83,6 +84,7 @@ class FailingAgent(SpecialistAgent):
         agent_call_fn=None,
         verbose: bool = False,
         budget=None,
+        store=None,
     ) -> AgentResult:
         return AgentResult(
             agent_name="failing",

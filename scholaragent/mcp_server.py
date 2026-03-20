@@ -166,7 +166,7 @@ def _get_agent_infra():
         registry.register(AnalystAgent())
         registry.register(SynthesizerAgent())
 
-        dispatcher = Dispatcher(registry=registry, handler=handler)
+        dispatcher = Dispatcher(registry=registry, handler=handler, store=_get_store())
 
         _agent_handler = handler
         _agent_registry = registry
@@ -245,7 +245,7 @@ def _memory_store(
     source_type = "docs"
     if source.startswith("arxiv:") or source.startswith("s2:"):
         source_type = "paper"
-    elif source.startswith("github:") or source.startswith("https://github.com"):
+    elif source.startswith("github:") or source.startswith("https://github.com/"):
         source_type = "code"
 
     entry = MemoryEntry(
