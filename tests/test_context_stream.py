@@ -152,3 +152,79 @@ class TestContextStream:
         stream = ContextStream(query="test", on_save=lambda s: saved.append(s.id))
         stream.commit("scout", [])
         assert len(saved) == 1
+
+
+from scholaragent.memory.store import MemoryStore
+from tests.helpers import FakeEmbeddings
+
+
+class TestMemoryStoreStreams:
+    """Tests for ContextStream persistence in MemoryStore."""
+
+    @pytest.fixture()
+    def store(self, tmp_path):
+        db_path = str(tmp_path / "test.db")
+        return MemoryStore(db_path=db_path, embeddings=FakeEmbeddings())
+
+    def test_save_and_load_stream(self, store):
+        stream = ContextStream(query="test query")
+        stream.push("scout", "papers_found", {"papers": [{"title": "A"}]})
+        stream.commit("scout", [{"role": "user", "content": "task"}])
+        store.save_stream(stream)
+        loaded = store.load_stream(stream.id)
+        assert loaded is not None
+        assert loaded.id == stream.id
+        assert loaded.query == stream.query
+        assert loaded.state.papers == [{"title": "A"}]
+        assert loaded.traces["scout"] == [{"role": "user", "content": "task"}]
+        assert len(loaded.events) == 1
+
+    def test_load_nonexistent_stream(self, store):
+        assert store.load_stream("nonexistent") is None
+
+    def test_save_stream_upsert(self, store):
+        stream = ContextStream(query="test")
+        store.save_stream(stream)
+        stream.push("scout", "papers_found", {"papers": [{"title": "A"}]})
+        store.save_stream(stream)
+        loaded = store.load_stream(stream.id)
+        assert len(loaded.state.papers) == 1
+
+    def test_list_streams_empty(self, store):
+        assert store.list_streams() == []
+
+    def test_list_streams_returns_compact(self, store):
+        stream = ContextStream(query="test query")
+        stream.push("scout", "papers_found", {"papers": []})
+        stream.commit("scout", [])
+        store.save_stream(stream)
+        results = store.list_streams()
+        assert len(results) == 1
+        assert results[0]["id"] == stream.id
+        assert results[0]["query"] == "test query"
+        assert "scout" in results[0]["agents"]
+        assert results[0]["event_count"] == 1
+
+    def test_list_streams_filter_by_query(self, store):
+        s1 = ContextStream(query="protein folding")
+        s2 = ContextStream(query="quantum computing")
+        store.save_stream(s1)
+        store.save_stream(s2)
+        results = store.list_streams(query="protein")
+        assert len(results) == 1
+        assert results[0]["query"] == "protein folding"
+
+    def test_list_streams_respects_limit(self, store):
+        for i in range(5):
+            store.save_stream(ContextStream(query=f"query {i}"))
+        results = store.list_streams(limit=3)
+        assert len(results) == 3
+
+    def test_list_streams_ordered_by_updated_at(self, store):
+        s1 = ContextStream(query="first")
+        s2 = ContextStream(query="second")
+        store.save_stream(s1)
+        store.save_stream(s2)
+        results = store.list_streams()
+        # Most recent first
+        assert results[0]["query"] == "second"

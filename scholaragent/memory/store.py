@@ -1,13 +1,19 @@
 """Persistent memory store backed by SQLite with semantic search."""
 
+from __future__ import annotations
+
 import json
 import sqlite3
 import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from scholaragent.memory.embeddings import EmbeddingBackend, cosine_similarity
 from scholaragent.memory.types import MemoryEntry, ResearchLogEntry
+
+if TYPE_CHECKING:
+    from scholaragent.core.context import ContextStream
 
 
 class MemoryStore:
@@ -46,6 +52,17 @@ class MemoryStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_entries_source ON entries(source_type);
                 CREATE INDEX IF NOT EXISTS idx_research_created ON research_log(created_at);
+                CREATE TABLE IF NOT EXISTS context_streams (
+                    id TEXT PRIMARY KEY,
+                    query TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    traces TEXT NOT NULL,
+                    events TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_streams_updated ON context_streams(updated_at);
+                CREATE INDEX IF NOT EXISTS idx_streams_query ON context_streams(query);
             """)
             self._conn.commit()
 
@@ -232,6 +249,76 @@ class MemoryStore:
             "research_queries_logged": research_count,
             "db_path": self.db_path,
         }
+
+    def save_stream(self, stream: ContextStream) -> None:
+        """Persist a ContextStream (upsert)."""
+        with self._lock:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO context_streams
+                   (id, query, state, traces, events, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    stream.id,
+                    stream.query,
+                    json.dumps(stream.state.to_dict()),
+                    json.dumps(stream.traces),
+                    json.dumps([e.to_dict() for e in stream.events]),
+                    stream.created_at,
+                    stream.updated_at,
+                ),
+            )
+            self._conn.commit()
+
+    def load_stream(self, stream_id: str) -> ContextStream | None:
+        """Load a ContextStream by ID."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM context_streams WHERE id = ?", (stream_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        from scholaragent.core.context import ContextStream
+        return ContextStream.from_dict({
+            "id": row["id"],
+            "query": row["query"],
+            "state": json.loads(row["state"]),
+            "traces": json.loads(row["traces"]),
+            "events": json.loads(row["events"]),
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        })
+
+    def list_streams(
+        self, query: str | None = None, limit: int = 10
+    ) -> list[dict]:
+        """List recent context streams as compact metadata dicts."""
+        with self._lock:
+            if query:
+                rows = self._conn.execute(
+                    "SELECT id, query, traces, events, created_at, updated_at "
+                    "FROM context_streams WHERE query LIKE ? "
+                    "ORDER BY updated_at DESC LIMIT ?",
+                    (f"%{query}%", limit),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT id, query, traces, events, created_at, updated_at "
+                    "FROM context_streams ORDER BY updated_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        results = []
+        for row in rows:
+            traces = json.loads(row["traces"])
+            events = json.loads(row["events"])
+            results.append({
+                "id": row["id"],
+                "query": row["query"],
+                "agents": list(traces.keys()),
+                "event_count": len(events),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            })
+        return results
 
     def close(self) -> None:
         """Close the database connection."""
