@@ -348,3 +348,71 @@ class TestAgentStreamIntegration:
         agent = MockStreamAgent()
         result = agent.run(task="test", handler=handler)
         assert result.success
+
+
+from scholaragent.core.dispatcher import Dispatcher
+from scholaragent.core.registry import AgentRegistry
+
+
+class SimpleAgent(SpecialistAgent):
+    """Minimal agent that immediately returns."""
+
+    def __init__(self, agent_name: str = "scout"):
+        self._name = agent_name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def system_prompt(self) -> str:
+        return f"You are {self._name}."
+
+
+class TestDispatcherStream:
+    """Tests for Dispatcher creating and threading ContextStream."""
+
+    @pytest.fixture()
+    def registry(self):
+        reg = AgentRegistry()
+        for name in ["scout", "reader", "critic", "analyst", "synthesizer"]:
+            reg.register(SimpleAgent(name))
+        return reg
+
+    @pytest.fixture()
+    def handler(self):
+        h = LMHandler(client=FakeLM("FINAL(done)"), token_counter=None, verbose=False)
+        h.start()
+        yield h
+        h.stop()
+
+    def test_dispatcher_creates_stream(self, registry, handler):
+        """Dispatcher creates a ContextStream on run()."""
+        dispatcher = Dispatcher(registry=registry, handler=handler)
+        result = dispatcher.run(task="test query")
+        assert result.success
+        assert dispatcher._stream is not None
+        assert dispatcher._stream.query == "test query"
+
+    def test_dispatcher_passes_stream_to_child(self, registry, handler):
+        """Dispatched agents receive the stream."""
+        code = '```repl\nresult = call_agent("scout", "find papers")\nFINAL(result)\n```'
+        lm = FakeLM(code)
+        h = LMHandler(client=lm, token_counter=None, verbose=False)
+        h.start()
+        dispatcher = Dispatcher(registry=registry, handler=h)
+        result = dispatcher.run(task="test")
+        assert dispatcher._stream is not None
+        # Scout should have committed its trace
+        assert "scout" in dispatcher._stream.traces
+        h.stop()
+
+    def test_dispatcher_stream_persists_with_store(self, registry, handler, tmp_path):
+        """When store is set, stream is persisted on completion."""
+        store = MemoryStore(db_path=str(tmp_path / "test.db"), embeddings=FakeEmbeddings())
+        dispatcher = Dispatcher(registry=registry, handler=handler, store=store)
+        result = dispatcher.run(task="persist test")
+        assert result.success
+        streams = store.list_streams()
+        assert len(streams) == 1
+        assert streams[0]["query"] == "persist test"

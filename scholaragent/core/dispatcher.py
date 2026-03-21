@@ -11,6 +11,8 @@ from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.types import AgentResult
 from scholaragent.utils.prompts import DISPATCHER_SYSTEM_PROMPT
 
+from scholaragent.core.context import ContextStream
+
 if TYPE_CHECKING:
     from scholaragent.utils.budget import Budget
     from scholaragent.memory.store import MemoryStore
@@ -77,6 +79,7 @@ class Dispatcher(SpecialistAgent):
             max_iterations=10,
             budget=sub_budget,
             store=self._store,
+            stream=self._stream,
         )
 
         # Roll up sub-budget usage to dispatcher budget
@@ -96,15 +99,28 @@ class Dispatcher(SpecialistAgent):
         verbose: bool = False,
         budget: Budget | None = None,
     ) -> AgentResult:
-        """Override run() to inject ``_dispatch_agent`` as the ``call_agent`` function."""
-        # Use the provided budget or the one from __init__
+        """Override run() to create ContextStream and inject ``_dispatch_agent``."""
         if budget is not None:
             self._budget = budget
-        return super().run(
+
+        # Create a ContextStream for this pipeline run
+        self._stream = ContextStream(
+            query=task,
+            on_save=self._store.save_stream if self._store is not None else None,
+        )
+
+        result = super().run(
             task=task,
             handler=self._handler,
             max_iterations=max_iterations,
             agent_call_fn=self._dispatch_agent,
             verbose=verbose,
             budget=self._budget,
+            stream=self._stream,
         )
+
+        # Final persist
+        if self._store is not None:
+            self._store.save_stream(self._stream)
+
+        return result
