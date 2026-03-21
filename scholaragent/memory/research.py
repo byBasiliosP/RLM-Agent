@@ -148,6 +148,12 @@ class ResearchPipeline:
         """Normal depth: Scout → Reader → Critic pipeline."""
         assert self.handler is not None and self.registry is not None
 
+        from scholaragent.core.context import ContextStream
+        stream = ContextStream(
+            query=query,
+            on_save=self.store.save_stream,
+        )
+
         focus_hint = FOCUS_HINTS.get(focus, "")
         task_suffix = f"\n\nFocus: {focus_hint}" if focus_hint else ""
 
@@ -159,6 +165,7 @@ class ResearchPipeline:
                 handler=self.handler,
                 max_iterations=8,
                 store=self.store,
+                stream=stream,
             )
             if not scout_result.success:
                 logger.warning("Scout failed, falling back to quick: %s", scout_result.result)
@@ -173,7 +180,7 @@ class ResearchPipeline:
         raw_results = self._deduplicate(raw_results)
 
         # Step 3: Run Reader + Critic on papers (parallel)
-        enriched = self._process_papers_normal(raw_results, focus_hint)
+        enriched = self._process_papers_normal(raw_results, focus_hint, stream)
 
         # Step 4: Index all results
         entries_added = 0
@@ -200,6 +207,7 @@ class ResearchPipeline:
             entries_added += 1
 
         self.store.log_research(query=query, depth="normal", focus=focus, result_count=entries_added)
+        self.store.save_stream(stream)
         return {
             "status": "completed",
             "depth": "normal",
@@ -252,7 +260,7 @@ class ResearchPipeline:
     # ----- agent processing helpers -------------------------------------------
 
     def _process_papers_normal(
-        self, raw_results: list[dict], focus_hint: str
+        self, raw_results: list[dict], focus_hint: str, stream=None
     ) -> list[dict]:
         """Run Reader + Critic on each paper result, in parallel.
 
@@ -281,6 +289,7 @@ class ResearchPipeline:
                     handler=self.handler,
                     max_iterations=6,
                     store=self.store,
+                    stream=stream,
                 )
                 if reader_result.success:
                     enriched["reader_findings"] = reader_result.result
@@ -300,6 +309,7 @@ class ResearchPipeline:
                     handler=self.handler,
                     max_iterations=6,
                     store=self.store,
+                    stream=stream,
                 )
                 if critic_result.success:
                     enriched["critic_assessment"] = critic_result.result

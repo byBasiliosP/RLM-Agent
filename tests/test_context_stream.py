@@ -416,3 +416,44 @@ class TestDispatcherStream:
         streams = store.list_streams()
         assert len(streams) == 1
         assert streams[0]["query"] == "persist test"
+
+
+from scholaragent.memory.research import ResearchPipeline
+
+
+class TestResearchPipelineStream:
+    """Tests for ContextStream in ResearchPipeline."""
+
+    @pytest.fixture()
+    def store(self, tmp_path):
+        return MemoryStore(db_path=str(tmp_path / "test.db"), embeddings=FakeEmbeddings())
+
+    @pytest.fixture()
+    def pipeline_with_agents(self, store):
+        handler = LMHandler(client=FakeLM("FINAL(done)"), token_counter=None, verbose=False)
+        handler.start()
+        registry = AgentRegistry()
+        for name in ["scout", "reader", "critic", "analyst", "synthesizer"]:
+            registry.register(SimpleAgent(name))
+        dispatcher = Dispatcher(registry=registry, handler=handler, store=store)
+        pipeline = ResearchPipeline(store=store)
+        pipeline.set_agent_infra(handler, registry, dispatcher)
+        return pipeline, handler
+
+    def test_deep_run_creates_stream(self, pipeline_with_agents):
+        pipeline, handler = pipeline_with_agents
+        result = pipeline.run("test deep", depth="deep", force=True)
+        assert result["status"] == "completed"
+        streams = pipeline.store.list_streams()
+        assert len(streams) >= 1
+        handler.stop()
+
+    def test_normal_run_creates_stream(self, pipeline_with_agents):
+        pipeline, handler = pipeline_with_agents
+        with patch("scholaragent.memory.research.search_arxiv", return_value="[]"), \
+             patch("scholaragent.memory.research.search_semantic_scholar", return_value="[]"), \
+             patch("scholaragent.memory.research.search_github_code", return_value=[]), \
+             patch("scholaragent.memory.research.search_docs", return_value=[]):
+            result = pipeline.run("test normal", depth="normal", force=True)
+        assert result["status"] == "completed"
+        handler.stop()
