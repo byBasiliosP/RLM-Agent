@@ -38,6 +38,7 @@ class Dispatcher(SpecialistAgent):
         self._handler = handler
         self._budget = budget
         self._store = store
+        self._stream = None
 
     @property
     def name(self) -> str:

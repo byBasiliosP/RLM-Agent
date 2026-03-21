@@ -90,7 +90,7 @@ class EchoAgent(SpecialistAgent):
         return "You echo."
 
     def run(self, task, handler, max_iterations=10, agent_call_fn=None,
-            verbose=False, budget=None, store=None):
+            verbose=False, budget=None, store=None, stream=None):
         # Capture received store for assertions
         EchoAgent.received_store = store
         return AgentResult(
