@@ -21,6 +21,7 @@ from scholaragent.utils.parsing import find_code_blocks, find_final_answer, form
 if TYPE_CHECKING:
     from scholaragent.utils.budget import Budget
     from scholaragent.memory.store import MemoryStore
+    from scholaragent.core.context import ContextStream
 
 
 class SpecialistAgent(ABC):
@@ -88,6 +89,7 @@ class SpecialistAgent(ABC):
         verbose: bool = False,
         budget: Budget | None = None,
         store: MemoryStore | None = None,
+        stream: ContextStream | None = None,
     ) -> AgentResult:
         """Run the agent's REPL loop.
 
@@ -115,6 +117,20 @@ class SpecialistAgent(ABC):
             repl.globals["call_agent"] = agent_call_fn
             repl._call_agent = agent_call_fn  # so _restore_scaffold preserves it
 
+        # Inject stream functions if a ContextStream is provided
+        if stream is not None:
+            def _stream_push(event_type: str, data: dict) -> str:
+                stream.push(self.name, event_type, data)
+                return f"pushed:{event_type}"
+
+            def _stream_read(agent: str | None = None) -> dict:
+                return stream.read(agent=agent)
+
+            repl.globals["stream_push"] = _stream_push
+            repl.globals["stream_read"] = _stream_read
+            repl._stream_push = _stream_push
+            repl._stream_read = _stream_read
+
         repl.load_context(task)
 
         messages: list[dict[str, str]] = [
@@ -134,6 +150,8 @@ class SpecialistAgent(ABC):
             if budget is not None:
                 budget.use_iteration()
                 if budget.is_exhausted:
+                    if stream is not None:
+                        stream.commit(self.name, messages)
                     return AgentResult(
                         agent_name=self.name,
                         task=task,
@@ -154,6 +172,8 @@ class SpecialistAgent(ABC):
             # Check for inline FINAL()
             final_answer = find_final_answer(llm_response)
             if final_answer:
+                if stream is not None:
+                    stream.commit(self.name, messages)
                 return AgentResult(
                     agent_name=self.name,
                     task=task,
@@ -178,6 +198,8 @@ class SpecialistAgent(ABC):
                     final_value = result.final_value
 
             if has_final and final_value is not None:
+                if stream is not None:
+                    stream.commit(self.name, messages)
                 return AgentResult(
                     agent_name=self.name,
                     task=task,
@@ -200,6 +222,8 @@ class SpecialistAgent(ABC):
                 )
 
         # Max iterations reached
+        if stream is not None:
+            stream.commit(self.name, messages)
         return AgentResult(
             agent_name=self.name,
             task=task,

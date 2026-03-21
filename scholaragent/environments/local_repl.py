@@ -365,6 +365,12 @@ class LocalREPL(BaseEnv):
                 self.globals["SHOW_PROGRESS"] = self._show_progress
             elif name == "context" and self._original_context is not None:
                 self.locals["context"] = self._original_context
+            elif name == "stream_push":
+                if hasattr(self, "_stream_push"):
+                    self.globals["stream_push"] = self._stream_push
+            elif name == "stream_read":
+                if hasattr(self, "_stream_read"):
+                    self.globals["stream_read"] = self._stream_read
 
         # Clean up any reserved names that leaked into locals from the
         # combined namespace (except 'context' which lives in locals).

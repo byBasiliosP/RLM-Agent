@@ -23,6 +23,8 @@ RESERVED_NAMES: frozenset[str] = frozenset(
         "SHOW_VARS",
         "SHOW_PROGRESS",
         "context",
+        "stream_push",
+        "stream_read",
     }
 )
 
