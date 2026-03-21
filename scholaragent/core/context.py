@@ -24,6 +24,9 @@ class PipelineState:
     assessments: dict[str, dict] = field(default_factory=dict)
     themes: dict = field(default_factory=dict)
     synthesis: str = ""
+    quality: dict[str, list] = field(
+        default_factory=lambda: {"lint": [], "architecture": [], "coverage": []}
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -32,6 +35,7 @@ class PipelineState:
             "assessments": dict(self.assessments),
             "themes": dict(self.themes),
             "synthesis": self.synthesis,
+            "quality": dict(self.quality),
         }
 
     @classmethod
@@ -42,6 +46,7 @@ class PipelineState:
             assessments=d.get("assessments", {}),
             themes=d.get("themes", {}),
             synthesis=d.get("synthesis", ""),
+            quality=d.get("quality", {"lint": [], "architecture": [], "coverage": []}),
         )
 
 
@@ -95,6 +100,15 @@ def _update_themes(state: PipelineState, data: dict) -> None:
 def _update_synthesis(state: PipelineState, data: dict) -> None:
     state.synthesis = data.get("synthesis", "")
 
+def _update_quality_lint(state: PipelineState, data: dict) -> None:
+    state.quality["lint"].append(data.get("result", {}))
+
+def _update_quality_architecture(state: PipelineState, data: dict) -> None:
+    state.quality["architecture"].append(data.get("result", {}))
+
+def _update_quality_coverage(state: PipelineState, data: dict) -> None:
+    state.quality["coverage"].append(data.get("result", {}))
+
 
 _STATE_UPDATERS = {
     "papers_found": _update_papers,
@@ -102,6 +116,9 @@ _STATE_UPDATERS = {
     "assessment_complete": _update_assessments,
     "themes_identified": _update_themes,
     "synthesis_complete": _update_synthesis,
+    "quality_lint": _update_quality_lint,
+    "quality_architecture": _update_quality_architecture,
+    "quality_coverage": _update_quality_coverage,
 }
 
 

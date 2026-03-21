@@ -563,3 +563,53 @@ class TestEndToEnd:
         assert "events" in data
 
         handler.stop()
+
+
+class TestQualityState:
+    """Tests for quality field in PipelineState and ContextStream."""
+
+    def test_empty_state_has_quality(self):
+        state = PipelineState()
+        assert state.quality == {"lint": [], "architecture": [], "coverage": []}
+
+    def test_to_dict_includes_quality(self):
+        state = PipelineState()
+        state.quality["lint"].append({"issue": "unused import"})
+        d = state.to_dict()
+        assert d["quality"]["lint"] == [{"issue": "unused import"}]
+
+    def test_from_dict_restores_quality(self):
+        d = {"papers": [], "findings": {}, "assessments": {}, "themes": {},
+             "synthesis": "", "quality": {"lint": [{"x": 1}], "architecture": [], "coverage": []}}
+        state = PipelineState.from_dict(d)
+        assert state.quality["lint"] == [{"x": 1}]
+
+    def test_from_dict_backward_compat(self):
+        """Old dicts without quality field still work."""
+        d = {"papers": [], "findings": {}, "assessments": {}, "themes": {}, "synthesis": ""}
+        state = PipelineState.from_dict(d)
+        assert state.quality == {"lint": [], "architecture": [], "coverage": []}
+
+    def test_push_quality_lint(self):
+        stream = ContextStream(query="test")
+        stream.push("linter", "quality_lint", {"result": {"issues": ["unused import"]}})
+        assert len(stream.state.quality["lint"]) == 1
+
+    def test_push_quality_architecture(self):
+        stream = ContextStream(query="test")
+        stream.push("architect", "quality_architecture", {"result": {"violations": ["circular dep"]}})
+        assert len(stream.state.quality["architecture"]) == 1
+
+    def test_push_quality_coverage(self):
+        stream = ContextStream(query="test")
+        stream.push("coverage", "quality_coverage", {"result": {"untested": ["module_x"]}})
+        assert len(stream.state.quality["coverage"]) == 1
+
+    def test_quality_accumulates(self):
+        stream = ContextStream(query="test")
+        stream.push("linter", "quality_lint", {"result": {"a": 1}})
+        stream.push("linter", "quality_lint", {"result": {"b": 2}})
+        stream.push("architect", "quality_architecture", {"result": {"c": 3}})
+        assert len(stream.state.quality["lint"]) == 2
+        assert len(stream.state.quality["architecture"]) == 1
+        assert len(stream.state.quality["coverage"]) == 0
