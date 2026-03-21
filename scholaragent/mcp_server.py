@@ -285,6 +285,33 @@ def _memory_status(store: MemoryStore) -> dict:
     return status
 
 
+def _memory_stream_list(
+    store: MemoryStore,
+    query: str | None = None,
+    limit: int = 5,
+) -> dict:
+    if not 1 <= limit <= 50:
+        return {"error": "limit must be between 1 and 50"}
+    streams = store.list_streams(query=query, limit=limit)
+    return {"streams": streams}
+
+
+def _memory_stream_get(
+    store: MemoryStore,
+    stream_id: str,
+    agent: str | None = None,
+) -> dict:
+    stream = store.load_stream(stream_id)
+    if stream is None:
+        return {"error": f"No stream found with id: {stream_id}"}
+    data = stream.read(agent=agent)
+    data["id"] = stream.id
+    data["query"] = stream.query
+    data["created_at"] = stream.created_at
+    data["updated_at"] = stream.updated_at
+    return data
+
+
 # --- MCP Server ---
 
 mcp = FastMCP("scholar-memory", json_response=True)
@@ -399,6 +426,45 @@ def memory_model_config() -> str:
     """
     config = _build_model_config()
     return json.dumps(config, indent=2)
+
+
+@mcp.tool()
+def memory_stream_list(
+    query: str | None = None,
+    limit: int = 5,
+) -> str:
+    """List recent research pipeline context streams.
+
+    Shows metadata for past research runs including which agents
+    participated and how many events were recorded. Use to find
+    a stream_id for memory_stream_get.
+
+    Args:
+        query: Filter by research query text (optional)
+        limit: Maximum streams to return (default 5)
+    """
+    result = _memory_stream_list(_get_store(), query, limit)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def memory_stream_get(
+    stream_id: str,
+    agent: str | None = None,
+) -> str:
+    """Get full context from a research pipeline run.
+
+    Returns the structured state (papers, findings, assessments,
+    themes, synthesis), conversation traces, and event log from
+    a specific research run. Use to understand HOW a conclusion
+    was reached, not just WHAT was concluded.
+
+    Args:
+        stream_id: Stream ID from memory_stream_list
+        agent: Filter to one agent's data (optional: "scout", "reader", "critic", "analyst", "synthesizer")
+    """
+    result = _memory_stream_get(_get_store(), stream_id, agent)
+    return json.dumps(result, indent=2)
 
 
 def main():

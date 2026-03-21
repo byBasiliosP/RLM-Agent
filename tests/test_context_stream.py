@@ -457,3 +457,70 @@ class TestResearchPipelineStream:
             result = pipeline.run("test normal", depth="normal", force=True)
         assert result["status"] == "completed"
         handler.stop()
+
+
+try:
+    import mcp
+    _has_mcp = True
+except ImportError:
+    _has_mcp = False
+
+
+@pytest.mark.skipif(not _has_mcp, reason="mcp package not installed")
+class TestMCPStreamTools:
+    """Tests for MCP stream tool handler functions."""
+
+    @pytest.fixture()
+    def store(self, tmp_path):
+        return MemoryStore(db_path=str(tmp_path / "test.db"), embeddings=FakeEmbeddings())
+
+    def test_stream_list_empty(self, store):
+        from scholaragent.mcp_server import _memory_stream_list
+        result = _memory_stream_list(store)
+        assert result["streams"] == []
+
+    def test_stream_list_with_data(self, store):
+        from scholaragent.mcp_server import _memory_stream_list
+        stream = ContextStream(query="test")
+        stream.commit("scout", [{"role": "user", "content": "hi"}])
+        store.save_stream(stream)
+        result = _memory_stream_list(store)
+        assert len(result["streams"]) == 1
+        assert result["streams"][0]["query"] == "test"
+
+    def test_stream_list_filter(self, store):
+        from scholaragent.mcp_server import _memory_stream_list
+        store.save_stream(ContextStream(query="protein folding"))
+        store.save_stream(ContextStream(query="quantum computing"))
+        result = _memory_stream_list(store, query="protein")
+        assert len(result["streams"]) == 1
+
+    def test_stream_get_full(self, store):
+        from scholaragent.mcp_server import _memory_stream_get
+        stream = ContextStream(query="test")
+        stream.push("scout", "papers_found", {"papers": [{"title": "A"}]})
+        stream.commit("scout", [{"role": "user", "content": "task"}])
+        store.save_stream(stream)
+        result = _memory_stream_get(store, stream.id)
+        assert result["query"] == "test"
+        assert "state" in result
+        assert "traces" in result
+        assert "events" in result
+
+    def test_stream_get_filtered(self, store):
+        from scholaragent.mcp_server import _memory_stream_get
+        stream = ContextStream(query="test")
+        stream.push("scout", "papers_found", {"papers": []})
+        stream.push("reader", "finding_extracted", {"paper_ref": "x", "finding": {}})
+        stream.commit("scout", [])
+        stream.commit("reader", [])
+        store.save_stream(stream)
+        result = _memory_stream_get(store, stream.id, agent="scout")
+        assert "scout" in result["traces"]
+        assert "reader" not in result["traces"]
+        assert all(e["agent"] == "scout" for e in result["events"])
+
+    def test_stream_get_not_found(self, store):
+        from scholaragent.mcp_server import _memory_stream_get
+        result = _memory_stream_get(store, "nonexistent")
+        assert "error" in result
