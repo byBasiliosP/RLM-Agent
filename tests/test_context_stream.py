@@ -524,3 +524,42 @@ class TestMCPStreamTools:
         from scholaragent.mcp_server import _memory_stream_get
         result = _memory_stream_get(store, "nonexistent")
         assert "error" in result
+
+
+class TestEndToEnd:
+    """End-to-end test: full pipeline with stream persistence."""
+
+    def test_full_pipeline_with_stream(self, tmp_path):
+        """Dispatcher -> agents -> stream -> persist -> load -> read."""
+        store = MemoryStore(db_path=str(tmp_path / "test.db"), embeddings=FakeEmbeddings())
+
+        # Agent that calls scout then returns
+        dispatch_code = '```repl\nscout_result = call_agent("scout", "find papers")\nFINAL(scout_result)\n```'
+        handler = LMHandler(client=FakeLM(dispatch_code), token_counter=None, verbose=False)
+        handler.start()
+
+        registry = AgentRegistry()
+        registry.register(SimpleAgent("scout"))
+        registry.register(SimpleAgent("reader"))
+        registry.register(SimpleAgent("critic"))
+        registry.register(SimpleAgent("analyst"))
+        registry.register(SimpleAgent("synthesizer"))
+
+        dispatcher = Dispatcher(registry=registry, handler=handler, store=store)
+        result = dispatcher.run(task="end to end test")
+
+        # Verify stream was created and persisted
+        streams = store.list_streams()
+        assert len(streams) == 1
+        assert streams[0]["query"] == "end to end test"
+
+        # Verify we can load and read it
+        loaded = store.load_stream(streams[0]["id"])
+        assert loaded is not None
+        assert "dispatcher" in loaded.traces
+        data = loaded.read()
+        assert "state" in data
+        assert "traces" in data
+        assert "events" in data
+
+        handler.stop()

@@ -9,6 +9,7 @@ __all__ = [
     "Dispatcher",
     "AgentResult",
     "ResearchReport",
+    "ContextStream",
 ]
 
 from scholaragent.clients.router import ModelConfig, ModelRouter
@@ -17,6 +18,7 @@ from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.dispatcher import Dispatcher
 from scholaragent.core.handler import LMHandler
 from scholaragent.core.types import ResearchReport, AgentResult
+from scholaragent.core.context import ContextStream
 from scholaragent.agents.scout import ScoutAgent
 from scholaragent.agents.reader import ReaderAgent
 from scholaragent.agents.critic import CriticAgent
