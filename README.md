@@ -16,11 +16,11 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 ./install.sh
 ```
 
-That's it. Restart your coding agent (Claude Code, Cursor, Windsurf, VS Code) and you'll have 7 new tools available.
+That's it. Restart your coding agent (Claude Code, Cursor, Windsurf, VS Code) and you'll have 9 new tools available.
 
 ## What It Does
 
-ScholarAgent runs a pipeline of 5 specialist AI agents that collaborate on research tasks:
+ScholarAgent runs a pipeline of 6 specialist AI agents that collaborate on research tasks:
 
 ```
 Your Query
@@ -28,19 +28,25 @@ Your Query
     v
  Dispatcher (orchestrator)
     |
+    ├──> Scout ──> Reader ──> Critic ──> Analyst ──> Synthesizer
+    |    (find     (extract   (evaluate   (compare    (write
+    |     papers)   findings)  rigor)      across)     review)
+    |
+    └──> Linter (code quality analysis)
+    |
     v
- Scout -----> Reader -----> Critic -----> Analyst -----> Synthesizer
- (find        (extract      (evaluate     (compare       (write
-  papers)      findings)     rigor)        across)        review)
+ ContextStream (structured pipeline state + conversation traces)
     |
     v
  Memory Store (SQLite + embeddings)
     |
     v
- MCP Server (7 tools for your coding agent)
+ MCP Server (9 tools for your coding agent)
 ```
 
 Papers are found on **arXiv** and **Semantic Scholar**. Code examples come from **GitHub**. Documentation comes from the web. Everything gets indexed with embeddings for fast semantic search.
+
+Each pipeline run produces a **ContextStream** — a persistent record of every agent's reasoning, structured findings, and conversation traces. Other agents (or your coding agent via MCP) can query this stream to understand *why* a conclusion was reached, not just *what* it says.
 
 ## MCP Tools
 
@@ -55,6 +61,8 @@ Once installed, your coding agent gets these tools:
 | `memory_forget` | Remove stale entries by ID or semantic query | instant |
 | `memory_status` | Check what's in memory (counts, sources, history) | instant |
 | `memory_model_config` | Show active LLM backend configuration (strong/cheap models) | instant |
+| `memory_stream_list` | List active context streams with query filter | instant |
+| `memory_stream_get` | Get full pipeline state, traces, and events for a stream | instant |
 
 ### Research Depth Levels
 
@@ -85,6 +93,7 @@ Each agent runs an **RLM loop** (Reasoning via Language Models): generate Python
 | **Critic** | Evaluates methodology | Scores rigor and relevance (0-1) with defined rubrics. Flags biases (selection, confirmation, publication, funding, small sample). Rates reliability. |
 | **Analyst** | Compares across papers | Identifies themes (3+ papers), contradictions, research gaps, consensus areas. Weights findings by critic reliability scores. |
 | **Synthesizer** | Writes the review | Produces structured markdown (Introduction, Methodology Overview, Key Findings, Contradictions & Debates, Research Gaps, Conclusion, References) with `[Author et al., Year]` citations. |
+| **Linter** | Assesses code quality | Detects project framework (Python/TS/Rust/Go), runs real linters (pylint, eslint, clippy) when available, falls back to LLM analysis. Reports lint issues, architecture violations, and test coverage gaps. |
 
 ### Multi-LLM Routing
 
@@ -104,8 +113,10 @@ Supported backends: **OpenAI**, **Anthropic**, and **LM Studio** (any OpenAI-com
 | Source | Adapter | API |
 |--------|---------|-----|
 | Papers | `tools/arxiv.py`, `tools/semantic_scholar.py` | arXiv XML, S2 REST |
+| PDFs | `tools/pdf_extractor.py` | arXiv PDF download + pypdf extraction |
 | Code | `sources/github.py` | GitHub Search (needs `GITHUB_TOKEN`) |
 | Docs | `sources/docs.py` | Any URL (HTML-to-text extraction) |
+| Web | `tools/web.py` | Playwright-based search (Bing, Tavily, Brave, Serper) |
 
 ## Python API
 
@@ -211,17 +222,17 @@ scholaragent-install
 
 ```
 scholaragent/
-  agents/          # 5 specialist agents (scout, reader, critic, analyst, synthesizer)
-  core/            # Orchestration (dispatcher, registry, handler, REPL, comms)
+  agents/          # 6 specialist agents (scout, reader, critic, analyst, synthesizer, linter)
+  core/            # Orchestration (dispatcher, registry, handler, REPL, comms, context stream)
   clients/         # LLM clients (OpenAI, Anthropic, LM Studio) + model router
   memory/          # Persistent store (SQLite, embeddings, research pipeline)
   sources/         # Source adapters (GitHub code, documentation)
-  tools/           # Search tools (arXiv, Semantic Scholar)
+  tools/           # Search (arXiv, Semantic Scholar), web, PDF extraction, code quality
   environments/    # Sandboxed Python REPL
-  utils/           # Parsing, prompts, budget tracking
-  mcp_server.py    # FastMCP server (6 tools)
+  utils/           # Parsing, prompts, budget, cost tracking, LLM cache
+  mcp_server.py    # FastMCP server (9 tools, stdio transport)
   installer.py     # CLI installer (scholaragent-install)
-tests/             # 341 tests across 23 files
+tests/             # 593 tests across 35 files
 examples/          # Usage examples
 install.sh         # Bash installer (alternative)
 ```
