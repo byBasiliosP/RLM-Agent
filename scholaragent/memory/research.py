@@ -237,7 +237,7 @@ class ResearchPipeline:
             entry = MemoryEntry(
                 content=result.result,
                 summary=MemoryEntry.smart_summary(result.result),
-                source_type="paper",
+                source_type="synthesized_report",
                 source_ref=f"deep-research:{query[:50]}",
                 tags=[query.lower().replace(" ", "-"), "deep-pipeline", "synthesized"],
             )

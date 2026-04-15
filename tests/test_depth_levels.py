@@ -172,6 +172,42 @@ class TestDeepDepth:
         assert result["entries_added"] == 1
         mock_dispatcher.run.assert_called_once()
 
+    def test_deep_synthesis_stored_as_synthesized_report(self, store):
+        """Deep-depth synthesis output must be classified as synthesized_report.
+
+        Regression guard: previously the deep path stored its output as
+        source_type="paper" with source_ref="deep-research:...", which
+        polluted the paper namespace. It should use its own taxonomy.
+        """
+        from scholaragent.core.types import AgentResult
+
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.run.return_value = AgentResult(
+            agent_name="dispatcher",
+            task="test",
+            result="# Full synthesis report\n\nKey findings on RLHF...",
+            iterations=5,
+            success=True,
+        )
+
+        pipeline = ResearchPipeline(
+            store=store,
+            handler=MagicMock(),
+            registry=MagicMock(),
+            dispatcher=mock_dispatcher,
+        )
+
+        result = pipeline.run("RLHF deep taxonomy", depth="deep")
+        assert result["entries_added"] == 1
+
+        # Inspect the stored entry — it must be tagged synthesized_report,
+        # not paper, and should carry the deep-research: source_ref prefix.
+        matches = store.search("RLHF deep taxonomy", max_results=5)
+        assert len(matches) == 1
+        entry, _ = matches[0]
+        assert entry.source_type == "synthesized_report"
+        assert entry.source_ref.startswith("deep-research:")
+
     def test_deep_falls_back_on_dispatcher_failure(self, store):
         mock_handler = MagicMock()
         mock_dispatcher = MagicMock()

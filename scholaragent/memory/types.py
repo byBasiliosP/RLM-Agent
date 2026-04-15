@@ -3,7 +3,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import uuid4
 
-VALID_SOURCE_TYPES: frozenset[str] = frozenset({"paper", "docs", "code"})
+VALID_SOURCE_TYPES: frozenset[str] = frozenset(
+    {"paper", "docs", "code", "synthesized_report"}
+)
 
 
 @dataclass

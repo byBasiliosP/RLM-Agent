@@ -102,3 +102,24 @@ class TestSourceTypes:
         assert "paper" in VALID_SOURCE_TYPES
         assert "docs" in VALID_SOURCE_TYPES
         assert "code" in VALID_SOURCE_TYPES
+
+    def test_synthesized_report_is_valid(self):
+        """Deep research output has its own taxonomy slot.
+
+        Before the taxonomy fix, synthesized reports from deep-depth
+        research were stored as source_type="paper", polluting paper
+        filters, counts, and dedup logic.
+        """
+        from scholaragent.memory.types import VALID_SOURCE_TYPES
+        assert "synthesized_report" in VALID_SOURCE_TYPES
+
+    def test_memory_entry_accepts_synthesized_report(self):
+        from scholaragent.memory.types import MemoryEntry
+        entry = MemoryEntry(
+            content="Full synthesis of findings on RLHF...",
+            summary="Synthesis summary",
+            source_type="synthesized_report",
+            source_ref="deep-research:rlhf",
+            tags=["rlhf", "synthesized"],
+        )
+        assert entry.source_type == "synthesized_report"
