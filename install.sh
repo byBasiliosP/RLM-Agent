@@ -252,8 +252,19 @@ do_install() {
     ok "Registered in ${registered} agent(s)"
     echo
     info "Restart your coding agent to pick up the new MCP server."
-    info "The agent will have 5 new tools: memory_lookup, memory_research,"
-    info "memory_store, memory_forget, memory_status"
+
+    # Render the tool list from the single source of truth
+    # (scholaragent._manifest.MCP_TOOLS) so this message cannot drift
+    # from the actual MCP surface.
+    local tool_info
+    tool_info=$("${VENV_DIR}/bin/python" -c \
+        "from scholaragent._manifest import MCP_TOOLS; print(f'{len(MCP_TOOLS)} new tools: ' + ', '.join(MCP_TOOLS))" \
+        2>/dev/null || echo "")
+    if [[ -n "$tool_info" ]]; then
+        info "The agent will have ${tool_info}"
+    else
+        info "See the README for the list of available MCP tools."
+    fi
     echo
 }
 

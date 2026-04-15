@@ -14,6 +14,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from scholaragent._manifest import MCP_TOOLS
+
 MCP_SERVER_NAME = "scholar-memory"
 
 # Agent config locations
@@ -177,7 +179,7 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
     print()
     _ok(f"Registered in {registered} agent(s)")
     _info("Restart your coding agent to pick up the new MCP server.")
-    _info("Tools: memory_lookup, memory_research, memory_store, memory_forget, memory_status")
+    _info(f"{len(MCP_TOOLS)} tools available: {', '.join(MCP_TOOLS)}")
     print()
 
 
