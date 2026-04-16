@@ -28,7 +28,7 @@ The system has three layers:
 
 2. **The Memory Layer** --- a SQLite-backed semantic store with OpenAI embeddings that indexes every finding, enabling sub-second retrieval across sessions through cosine similarity search.
 
-3. **The MCP Interface** --- a FastMCP server exposing seven tools (`memory_lookup`, `memory_get`, `memory_research`, `memory_store`, `memory_forget`, `memory_status`, `memory_model_config`) that any MCP-compatible coding agent (Claude Code, Cursor, Windsurf, VS Code) can call to access research findings while writing code. The `memory_lookup` → `memory_get` pattern enables on-demand content retrieval, keeping the client's context window lean.
+3. **The MCP Interface** --- a FastMCP server exposing nine tools (`memory_lookup`, `memory_get`, `memory_research`, `memory_store`, `memory_forget`, `memory_status`, `memory_model_config`, `memory_stream_list`, `memory_stream_get`) that any MCP-compatible coding agent (Claude Code, Cursor, Windsurf, VS Code) can call to access research findings while writing code. The tool list is defined in `scholaragent/_manifest.py::MCP_TOOLS` as a single source of truth; a drift-guard test parses the `@mcp.tool()` decorators in `mcp_server.py` and fails the build if registration diverges from the manifest. The `memory_lookup` → `memory_get` pattern enables on-demand content retrieval, keeping the client's context window lean, and the `memory_stream_*` tools expose per-run ContextStream data so the client can inspect *why* a conclusion was reached, not just *what* it says.
 
 A typical interaction looks like this:
 
@@ -103,7 +103,7 @@ A 7-day deduplication window prevents the system from re-researching the same to
 
 MCP, introduced by Anthropic in November 2024, is an open standard for connecting AI assistants to external data sources and tools. It draws inspiration from the Language Server Protocol (LSP), which standardized how editors communicate with language-specific tooling. MCP standardizes how AI applications communicate with context-providing servers.
 
-RLM Agent's MCP server exposes the memory layer as seven tools that any MCP-compatible client can call. This means a developer using Claude Code, Cursor, or any MCP-enabled editor can invoke `memory_lookup("RLHF reward models")` while writing code and receive relevant research findings inline --- without leaving their editor or re-running a research pipeline.
+RLM Agent's MCP server exposes the memory layer as nine tools that any MCP-compatible client can call. This means a developer using Claude Code, Cursor, or any MCP-enabled editor can invoke `memory_lookup("RLHF reward models")` while writing code and receive relevant research findings inline --- without leaving their editor or re-running a research pipeline. The `memory_stream_list` and `memory_stream_get` tools additionally expose the ContextStream data from each prior research run, letting the client inspect the reasoning that produced a conclusion, not just the conclusion itself.
 
 The server uses FastMCP with stdio transport, making it trivially installable. Two installation methods are provided: a `scholaragent-install` CLI command (after `pip install scholaragent`) and a `install.sh` bash script. Both auto-detect installed editors (Claude Code, Cursor, Windsurf, VS Code) and register the server in their MCP configuration files. API keys are never stored in config files — they are inherited from the user's shell environment at runtime.
 
@@ -154,26 +154,35 @@ Agents communicate with the LLM through a multi-threaded TCP server (`LMHandler`
 
 ### 4.4 The Memory Layer
 
+The research pipeline is decomposed into three collaborators injected into `ResearchPipeline` via its constructor. This keeps `research.py` focused on depth orchestration and makes each collaborator independently testable.
+
 ```
 Research Query
     |
     v
-ResearchPipeline.run()
+ResearchPipeline.run(query, depth, focus)
     |
-    +---> _collect_sources()
+    +---> SourceCollector.collect(query)
     |       |---> search_arxiv()
     |       |---> search_semantic_scholar()
     |       |---> search_github_code()
-    |       +---> fetch_docs()
+    |       +---> search_docs()
     |
-    +---> Agent pipeline (based on depth)
+    +---> SourceCollector.deduplicate(results)
     |
-    +---> MemoryStore.add() for each finding
-    |       |---> EmbeddingBackend.embed()
-    |       +---> SQLite INSERT
+    +---> Agent pipeline (depth-dependent)
+    |       quick:  none
+    |       normal: Scout -> Reader + Critic (parallel, up to 3 workers)
+    |       deep:   Dispatcher orchestrating all five specialists
+    |
+    +---> ResultIndexer.index_raw | index_enriched | index_synthesis
+    |       |---> MemoryEntry construction + tagging
+    |       |---> MemoryStore.add() -> EmbeddingBackend.embed() -> SQLite INSERT
+    |
+    +---> ResultIndexer.log_research()
     |
     v
-Indexed in ~/.scholaragent/memory.db
+ResearchResult.to_dict()  # includes requested_depth, actual_depth, fallback_reason
     |
     v
 memory_lookup(query)
@@ -181,6 +190,10 @@ memory_lookup(query)
     |---> cosine_similarity() against all entries
     +---> Return top-k results
 ```
+
+At runtime, `mcp_server.py` delegates lifecycle to a single `RuntimeContainer` (in `scholaragent/runtime.py`) that owns the store, pipeline, and agent-infra singletons. The container uses double-checked locking for thread-safe lazy init and exposes a single idempotent `close()` that replaces the former pair of module-level `atexit` handlers. Tests instantiate containers with `FakeEmbeddings` and a tmp db path instead of monkey-patching module globals.
+
+`VALID_SOURCE_TYPES` in `memory/types.py` accepts four kinds: `paper`, `docs`, `code`, and `synthesized_report` (the last reserved for the deep-depth pipeline's Markdown output so it does not pollute the `paper` namespace).
 
 ### 4.5 Source Adapters
 
@@ -256,24 +269,9 @@ The system supports three research depth levels and three focus modes, creating 
 
 ## 7. Current Status and Test Coverage
 
-The system has **341 passing tests** across 23 test files, covering:
+The system has **609 passing tests** across 36 test files, spanning the full stack: core agent loop and scaffold immutability, LLM client wrappers with retry and rate limiting, Dispatcher orchestration and sub-budget allocation, paper/code/docs source adapters, memory store with semantic search and embedding cache, the refactored `SourceCollector` / `ResultIndexer` / `ResearchResult` / `RuntimeContainer` layer, MCP tool handlers with thread safety and JSON contracts, a drift-guard test that parses `@mcp.tool()` decorators against the `_manifest.MCP_TOOLS` tuple, the public Python API, structured logging, HTML-to-text extraction, and end-to-end integration chains with mocked LLM responses.
 
-- Core agent loop and REPL execution (28 tests)
-- REPL namespace isolation and scaffold immutability (12 tests)
-- LLM client wrappers, model routing, LM Studio backend, and retry logic (31 tests)
-- Dispatcher orchestration (11 tests)
-- Paper search tools with connection pooling (13 tests)
-- Source adapters with connection pooling and logging (14 tests)
-- Memory store, semantic search, and embedding cache (15 tests)
-- Research pipeline with deduplication and concurrent collection (6 tests)
-- MCP server tool handlers with thread safety (44 tests)
-- Agent integration tests with mocked LLM chains (6 tests)
-- Integration tests (3 tests)
-- Package installer (8 tests)
-- Public API (16 tests)
-- Data types and parsing (36 tests)
-- Structured logging (3 tests)
-- HTML-to-text extraction (10 tests)
+`pytest-asyncio` is installed as a transitive dependency of `httpx` but is explicitly disabled via `pyproject.toml` (`addopts = "-p no:asyncio"`). No tests use async primitives, and the plugin has been observed to deadlock against threading.Lock-based lazy initialization in `RuntimeContainer` and `MemoryStore` when collected alongside SQLite-heavy files.
 
 The project is packaged as a pip-installable Python package with two CLI entry points (`scholaragent-server` for the MCP server and `scholaragent-install` for agent registration) and a fallback `install.sh` bash script. Both auto-detect and register with Claude Code, Cursor, Windsurf, and VS Code. API keys are never stored in config files — they are resolved from the user's shell environment at runtime.
 
@@ -318,21 +316,25 @@ The project is packaged as a pip-installable Python package with two CLI entry p
 ```
 scholaragent/
 ├── __init__.py                  # Public API: ScholarAgent class
-├── mcp_server.py                # FastMCP server (7 tools)
-├── installer.py                 # CLI installer (scholaragent-install)
+├── _manifest.py                 # MCP_TOOLS tuple (single source of truth)
+├── mcp_server.py                # FastMCP server (9 tools, stdio transport)
+├── runtime.py                   # RuntimeContainer (lazy init, lifecycle, thread safety)
+├── installer.py                 # CLI installer; reads MCP_TOOLS from _manifest
 ├── core/
-│   ├── agent.py                 # SpecialistAgent + RLM loop
+│   ├── agent.py                 # SpecialistAgent ABC + RLM loop
 │   ├── dispatcher.py            # Orchestrator agent
-│   ├── registry.py              # Agent registry
-│   ├── handler.py               # LMHandler (TCP server)
-│   ├── comms.py                 # Wire protocol
-│   └── types.py                 # Core data types
+│   ├── registry.py              # AgentRegistry (name -> instance)
+│   ├── handler.py               # LMHandler (TCP server for llm_query routing)
+│   ├── comms.py                 # 4-byte length-prefixed JSON wire protocol
+│   ├── context.py               # ContextStream (structured state + traces + events)
+│   └── types.py                 # AgentResult, ResearchReport
 ├── agents/
 │   ├── scout.py                 # Paper discovery (cheap model)
 │   ├── reader.py                # Finding extraction
 │   ├── critic.py                # Methodology evaluation
 │   ├── analyst.py               # Cross-paper analysis
-│   └── synthesizer.py           # Literature review synthesis
+│   ├── synthesizer.py           # Literature review synthesis
+│   └── linter.py                # Static analysis specialist (implemented; not registered by default)
 ├── clients/
 │   ├── base.py                  # BaseLM abstract class
 │   ├── router.py                # Model routing (cheap/strong)
@@ -341,29 +343,36 @@ scholaragent/
 │   ├── token_counter.py         # Per-model token usage tracking
 │   └── rate_limiter.py          # Sliding-window RPM/TPM rate limiter
 ├── environments/
-│   ├── base.py                  # BaseEnv + REPLResult
-│   └── local_repl.py            # Sandboxed REPL
+│   ├── base.py                  # BaseEnv + REPLResult + RESERVED_NAMES
+│   └── local_repl.py            # Sandboxed REPL with scaffold restoration
 ├── memory/
-│   ├── store.py                 # SQLite + semantic search
-│   ├── types.py                 # MemoryEntry types
-│   ├── research.py              # Research pipeline (concurrent collection)
-│   └── embeddings.py            # Embedding backend (with LRU cache)
+│   ├── store.py                 # SQLite + cosine search (WAL mode)
+│   ├── types.py                 # MemoryEntry, ResearchLogEntry, VALID_SOURCE_TYPES
+│   ├── embeddings.py            # EmbeddingBackend ABC + OpenAIEmbeddings + LRU cache
+│   ├── research.py              # ResearchPipeline (depth orchestration; 322 lines)
+│   ├── source_collector.py      # SourceCollector (raw retrieval + dedup; 140 lines)
+│   ├── indexer.py               # ResultIndexer (MemoryEntry construction + store writes)
+│   └── research_result.py       # ResearchResult dataclass (requested_depth, actual_depth)
 ├── tools/
 │   ├── arxiv.py                 # arXiv API (connection pooled)
-│   └── semantic_scholar.py      # Semantic Scholar API (connection pooled)
+│   ├── semantic_scholar.py      # Semantic Scholar API (connection pooled)
+│   ├── web.py                   # Playwright-based web search
+│   ├── pdf_extractor.py         # arXiv PDF download + text extraction
+│   └── quality.py               # detect_framework, run_linter, discover_tests, run_tool_or_fallback
 ├── sources/
-│   ├── github.py                # GitHub code search (connection pooled)
-│   └── docs.py                  # Documentation fetcher (connection pooled)
+│   ├── github.py                # GitHub code search (connection pooled; needs GITHUB_TOKEN)
+│   └── docs.py                  # Documentation fetcher (search is currently Python-docs only)
 ├── utils/
 │   ├── parsing.py               # Code block + final answer parsing
-│   ├── prompts.py               # System prompts
+│   ├── prompts.py               # Dispatcher system prompt + focus hints
 │   ├── retry.py                 # retry_with_backoff utility
-│   ├── budget.py                # Resource budget tracking
-│   └── token_counter.py         # Token counting utilities
-├── install.sh                   # Bash installer (alternative to scholaragent-install)
-├── mcp-config-example.json      # Example MCP config for manual setup
-├── pyproject.toml               # Package config (v0.2.0)
-├── tests/                       # 341 tests across 23 files
-└── docs/
-    └── plans/                   # Design docs and implementation plans
+│   ├── budget.py                # Budget (tokens + iterations) with sub-budget splitting
+│   ├── cost.py                  # Per-model cost estimation
+│   └── cache.py                 # File-based LLM cache (SHA-256, 24h TTL)
+install.sh                       # Bash installer (wraps scholaragent-install)
+pyproject.toml                   # Package config (v0.2.0, pytest-asyncio disabled via addopts)
+tests/                           # 609 tests across 36 files
+docs/
+├── PROJECT_OVERVIEW.md          # This document
+└── superpowers/plans/           # Design docs and implementation plans
 ```
