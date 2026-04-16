@@ -14,9 +14,10 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
+from scholaragent.memory.indexer import ResultIndexer
 from scholaragent.memory.source_collector import SourceCollector
 from scholaragent.memory.store import MemoryStore
-from scholaragent.memory.types import MemoryEntry, ResearchLogEntry
+from scholaragent.memory.types import ResearchLogEntry
 
 if TYPE_CHECKING:
     from scholaragent.core.dispatcher import Dispatcher
@@ -48,12 +49,14 @@ class ResearchPipeline:
         registry: AgentRegistry | None = None,
         dispatcher: Dispatcher | None = None,
         collector: SourceCollector | None = None,
+        indexer: ResultIndexer | None = None,
     ):
         self.store = store
         self.handler = handler
         self.registry = registry
         self.dispatcher = dispatcher
         self._collector = collector or SourceCollector()
+        self._indexer = indexer or ResultIndexer(store)
 
     @property
     def has_agent_infra(self) -> bool:
@@ -117,20 +120,8 @@ class ResearchPipeline:
         raw_results, errors = self._collector.collect(query)
         raw_results = self._collector.deduplicate(raw_results)
 
-        entries_added = 0
-        for raw in raw_results:
-            summary = MemoryEntry.smart_summary(raw["content"])
-            entry = MemoryEntry(
-                content=raw["content"],
-                summary=summary,
-                source_type=raw["source_type"],
-                source_ref=raw["source_ref"],
-                tags=[query.lower().replace(" ", "-")],
-            )
-            self.store.add(entry)
-            entries_added += 1
-
-        self.store.log_research(query=query, depth=depth, focus=focus, result_count=entries_added)
+        entries_added = self._indexer.index_raw(query=query, raw_results=raw_results)
+        self._indexer.log_research(query=query, depth=depth, focus=focus, result_count=entries_added)
         return {
             "status": "completed",
             "depth": depth,
@@ -178,30 +169,8 @@ class ResearchPipeline:
         enriched = self._process_papers_normal(raw_results, focus_hint, stream)
 
         # Step 4: Index all results
-        entries_added = 0
-        for item in enriched:
-            content = item["content"]
-            if item.get("reader_findings"):
-                content += f"\n\n--- Reader Analysis ---\n{item['reader_findings']}"
-            if item.get("critic_assessment"):
-                content += f"\n\n--- Critic Assessment ---\n{item['critic_assessment']}"
-
-            tags = [query.lower().replace(" ", "-")]
-            if item.get("reader_findings") or item.get("critic_assessment"):
-                tags.append("agent-processed")
-
-            summary = MemoryEntry.smart_summary(content)
-            entry = MemoryEntry(
-                content=content,
-                summary=summary,
-                source_type=item["source_type"],
-                source_ref=item["source_ref"],
-                tags=tags,
-            )
-            self.store.add(entry)
-            entries_added += 1
-
-        self.store.log_research(query=query, depth="normal", focus=focus, result_count=entries_added)
+        entries_added = self._indexer.index_enriched(query=query, enriched_results=enriched)
+        self._indexer.log_research(query=query, depth="normal", focus=focus, result_count=entries_added)
         self.store.save_stream(stream)
         return {
             "status": "completed",
@@ -227,22 +196,12 @@ class ResearchPipeline:
             logger.warning("Deep pipeline failed, falling back to normal: %s", e)
             return self._run_normal(query, focus)
 
-        entries_added = 0
-        if result.success and result.result:
-            entry = MemoryEntry(
-                content=result.result,
-                summary=MemoryEntry.smart_summary(result.result),
-                source_type="synthesized_report",
-                source_ref=f"deep-research:{query[:50]}",
-                tags=[query.lower().replace(" ", "-"), "deep-pipeline", "synthesized"],
-            )
-            self.store.add(entry)
-            entries_added = 1
-        else:
+        if not result.success or not result.result:
             logger.warning("Deep pipeline returned no result, falling back to normal")
             return self._run_normal(query, focus)
 
-        self.store.log_research(query=query, depth="deep", focus=focus, result_count=entries_added)
+        entries_added = self._indexer.index_synthesis(query=query, synthesis_text=result.result)
+        self._indexer.log_research(query=query, depth="deep", focus=focus, result_count=entries_added)
         return {
             "status": "completed",
             "depth": "deep",

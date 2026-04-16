@@ -149,3 +149,20 @@ class TestPipelineDependencyInjection:
         assert result["entries_added"] == 1
         fake_collector.collect.assert_called_once()
         fake_collector.deduplicate.assert_called_once()
+
+    def test_pipeline_uses_injected_indexer(self, store):
+        from scholaragent.memory.research import ResearchPipeline
+        from scholaragent.memory.indexer import ResultIndexer
+
+        real_indexer = ResultIndexer(store)
+        pipeline = ResearchPipeline(
+            store=store,
+            collector=_mock_collector(
+                results=[{"content": "X", "source_type": "paper", "source_ref": "arxiv:9"}],
+            ),
+            indexer=real_indexer,
+        )
+        result = pipeline.run("test", depth="quick")
+
+        assert result["entries_added"] == 1
+        assert store.count() == 1
