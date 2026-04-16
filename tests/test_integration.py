@@ -73,11 +73,11 @@ class TestFullFlow:
         store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
         pipeline = ResearchPipeline(store=store)
 
-        # IMPORTANT: patch where the functions are USED (in research.py), not where they're defined
-        with patch("scholaragent.memory.research.search_arxiv") as mock_arxiv, \
-             patch("scholaragent.memory.research.search_semantic_scholar") as mock_s2, \
-             patch("scholaragent.memory.research.search_github_code") as mock_gh, \
-             patch("scholaragent.memory.research.search_docs") as mock_docs:
+        # Patch where the functions are USED (in source_collector.py), not where they're defined
+        with patch("scholaragent.memory.source_collector.search_arxiv") as mock_arxiv, \
+             patch("scholaragent.memory.source_collector.search_semantic_scholar") as mock_s2, \
+             patch("scholaragent.memory.source_collector.search_github_code") as mock_gh, \
+             patch("scholaragent.memory.source_collector.search_docs") as mock_docs:
             mock_arxiv.return_value = '[{"arxiv_id": "2401.00001", "title": "Attention Is All You Need", "authors": ["Vaswani"], "abstract": "We propose the Transformer architecture based on attention mechanisms", "published": "2017", "categories": ["cs.CL"]}]'
             mock_s2.return_value = '[]'
             mock_gh.return_value = [{"content": "class MultiHeadAttention(nn.Module):", "source_type": "code", "source_ref": "https://github.com/example/transformer"}]

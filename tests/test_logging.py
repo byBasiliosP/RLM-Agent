@@ -64,19 +64,19 @@ class TestStructuredLogging:
 
     def test_research_pipeline_logs_source_errors(self, tmp_path, monkeypatch):
         """ResearchPipeline should log warnings for failed sources."""
-        import scholaragent.memory.research as mod
+        import scholaragent.memory.source_collector as sc_mod
         from scholaragent.memory.store import MemoryStore
         from scholaragent.memory.research import ResearchPipeline
 
-        monkeypatch.setattr(mod, "search_arxiv", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("arxiv down")))
-        monkeypatch.setattr(mod, "search_semantic_scholar", lambda *a, **kw: "[]")
-        monkeypatch.setattr(mod, "search_github_code", lambda *a, **kw: [])
-        monkeypatch.setattr(mod, "search_docs", lambda *a, **kw: [])
+        monkeypatch.setattr(sc_mod, "search_arxiv", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("arxiv down")))
+        monkeypatch.setattr(sc_mod, "search_semantic_scholar", lambda *a, **kw: "[]")
+        monkeypatch.setattr(sc_mod, "search_github_code", lambda *a, **kw: [])
+        monkeypatch.setattr(sc_mod, "search_docs", lambda *a, **kw: [])
 
         db_path = str(tmp_path / "test.db")
         store = MemoryStore(db_path=db_path, embeddings=FakeEmbeddings())
         pipeline = ResearchPipeline(store=store)
 
-        with capture_logs("scholaragent.memory.research") as logs:
+        with capture_logs("scholaragent.memory.source_collector") as logs:
             pipeline.run("test", depth="quick", focus="implementation", force=True)
         assert any("arxiv down" in msg for msg in logs)

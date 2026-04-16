@@ -450,10 +450,10 @@ class TestResearchPipelineStream:
 
     def test_normal_run_creates_stream(self, pipeline_with_agents):
         pipeline, handler = pipeline_with_agents
-        with patch("scholaragent.memory.research.search_arxiv", return_value="[]"), \
-             patch("scholaragent.memory.research.search_semantic_scholar", return_value="[]"), \
-             patch("scholaragent.memory.research.search_github_code", return_value=[]), \
-             patch("scholaragent.memory.research.search_docs", return_value=[]):
+        with patch("scholaragent.memory.source_collector.search_arxiv", return_value="[]"), \
+             patch("scholaragent.memory.source_collector.search_semantic_scholar", return_value="[]"), \
+             patch("scholaragent.memory.source_collector.search_github_code", return_value=[]), \
+             patch("scholaragent.memory.source_collector.search_docs", return_value=[]):
             result = pipeline.run("test normal", depth="normal", force=True)
         assert result["status"] == "completed"
         handler.stop()

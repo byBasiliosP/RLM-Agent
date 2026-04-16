@@ -4,7 +4,7 @@ import os
 import tempfile
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from scholaragent.memory.research import ResearchPipeline
 
@@ -29,15 +29,18 @@ def store():
         s.close()
 
 
-def _patch_sources():
-    """Context manager to mock all source fetchers."""
-    return patch.multiple(
-        "scholaragent.memory.research",
-        search_arxiv=MagicMock(return_value='[{"arxiv_id": "123", "title": "Test", "authors": ["A"], "abstract": "Test abstract", "published": "2024", "categories": []}]'),
-        search_semantic_scholar=MagicMock(return_value='[]'),
-        search_github_code=MagicMock(return_value=[]),
-        search_docs=MagicMock(return_value=[]),
+def _mock_collector(results=None, errors=None):
+    """Return a mock SourceCollector with canned results."""
+    collector = MagicMock()
+    collector.collect.return_value = (
+        results if results is not None else [
+            {"content": "Title: Test\n\nAbstract: Test abstract",
+             "source_type": "paper", "source_ref": "arxiv:123"},
+        ],
+        errors if errors is not None else [],
     )
+    collector.deduplicate.side_effect = lambda xs: xs
+    return collector
 
 
 class TestHasAgentInfra:
@@ -66,19 +69,17 @@ class TestHasAgentInfra:
 
 class TestQuickDepth:
     def test_quick_indexes_raw_results(self, store):
-        pipeline = ResearchPipeline(store=store)
-        with _patch_sources():
-            result = pipeline.run("test", depth="quick")
-            assert result["depth"] == "quick"
-            assert result["entries_added"] > 0
-            assert store.count() > 0
+        pipeline = ResearchPipeline(store=store, collector=_mock_collector())
+        result = pipeline.run("test", depth="quick")
+        assert result["depth"] == "quick"
+        assert result["entries_added"] > 0
+        assert store.count() > 0
 
     def test_normal_falls_back_to_quick_without_infra(self, store):
-        pipeline = ResearchPipeline(store=store)
-        with _patch_sources():
-            result = pipeline.run("test", depth="normal")
-            assert result["status"] == "completed"
-            assert result["entries_added"] > 0
+        pipeline = ResearchPipeline(store=store, collector=_mock_collector())
+        result = pipeline.run("test", depth="normal")
+        assert result["status"] == "completed"
+        assert result["entries_added"] > 0
 
 
 class TestNormalDepth:
@@ -118,13 +119,13 @@ class TestNormalDepth:
             handler=mock_handler,
             registry=mock_registry,
             dispatcher=MagicMock(),
+            collector=_mock_collector(),
         )
 
-        with _patch_sources():
-            result = pipeline.run("RLHF", depth="normal")
-            assert result["status"] == "completed"
-            assert result["depth"] == "normal"
-            mock_scout.run.assert_called_once()
+        result = pipeline.run("RLHF", depth="normal")
+        assert result["status"] == "completed"
+        assert result["depth"] == "normal"
+        mock_scout.run.assert_called_once()
 
     def test_normal_falls_back_on_scout_failure(self, store):
         from scholaragent.core.types import AgentResult
@@ -142,12 +143,12 @@ class TestNormalDepth:
             handler=mock_handler,
             registry=mock_registry,
             dispatcher=MagicMock(),
+            collector=_mock_collector(),
         )
 
-        with _patch_sources():
-            result = pipeline.run("test", depth="normal")
-            assert result["status"] == "completed"
-            assert result["entries_added"] >= 0
+        result = pipeline.run("test", depth="normal")
+        assert result["status"] == "completed"
+        assert result["entries_added"] >= 0
 
 
 class TestDeepDepth:
@@ -240,9 +241,9 @@ class TestDeepDepth:
             handler=mock_handler,
             registry=mock_registry,
             dispatcher=mock_dispatcher,
+            collector=_mock_collector(),
         )
 
-        with _patch_sources():
-            result = pipeline.run("test", depth="deep")
-            # Should fall back to normal, then complete
-            assert result["status"] == "completed"
+        result = pipeline.run("test", depth="deep")
+        # Should fall back to normal, then complete
+        assert result["status"] == "completed"

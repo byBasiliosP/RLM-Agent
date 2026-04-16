@@ -70,7 +70,7 @@ class TestFocusHints:
 
         from unittest.mock import patch
         with patch.multiple(
-            "scholaragent.memory.research",
+            "scholaragent.memory.source_collector",
             search_arxiv=MagicMock(return_value='[]'),
             search_semantic_scholar=MagicMock(return_value='[]'),
             search_github_code=MagicMock(return_value=[]),
