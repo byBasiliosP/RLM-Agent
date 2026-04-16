@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 logger = logging.getLogger(__name__)
 
 from scholaragent.memory.indexer import ResultIndexer
+from scholaragent.memory.research_result import ResearchResult
 from scholaragent.memory.source_collector import SourceCollector
 from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.types import ResearchLogEntry
@@ -96,18 +97,23 @@ class ResearchPipeline:
         if not force:
             recent = self._check_dedup(query)
             if recent is not None:
-                return {
-                    "status": "cached",
-                    "depth": recent.depth,
-                    "query": recent.query,
-                    "entries_added": 0,
-                    "cached_results": recent.result_count,
-                    "message": f"Recent research found from {recent.created_at}. Use force=True to re-research.",
-                }
+                return ResearchResult(
+                    status="cached",
+                    query=recent.query,
+                    requested_depth=depth,
+                    actual_depth=recent.depth,
+                    entries_added=0,
+                    cached_results=recent.result_count,
+                    message=f"Recent research found from {recent.created_at}. Use force=True to re-research.",
+                ).to_dict()
 
         # Branch on depth level
         if depth == "quick" or not self.has_agent_infra:
-            return self._run_quick(query, depth, focus)
+            result = self._run_quick(query, focus)
+            if depth != "quick" and not self.has_agent_infra:
+                result["requested_depth"] = depth
+                result["fallback_reason"] = "Agent infrastructure not available"
+            return result
         elif depth == "normal":
             return self._run_normal(query, focus)
         else:  # deep
@@ -115,21 +121,22 @@ class ResearchPipeline:
 
     # ----- depth-level runners ------------------------------------------------
 
-    def _run_quick(self, query: str, depth: str, focus: str) -> dict:
+    def _run_quick(self, query: str, focus: str) -> dict:
         """Quick depth: collect sources and index raw results."""
         raw_results, errors = self._collector.collect(query)
         raw_results = self._collector.deduplicate(raw_results)
 
         entries_added = self._indexer.index_raw(query=query, raw_results=raw_results)
-        self._indexer.log_research(query=query, depth=depth, focus=focus, result_count=entries_added)
-        return {
-            "status": "completed",
-            "depth": depth,
-            "query": query,
-            "entries_added": entries_added,
-            "errors": errors,
-            "message": f"Research complete. {entries_added} entries indexed.",
-        }
+        self._indexer.log_research(query=query, depth="quick", focus=focus, result_count=entries_added)
+        return ResearchResult(
+            status="completed",
+            query=query,
+            requested_depth="quick",
+            actual_depth="quick",
+            entries_added=entries_added,
+            errors=errors,
+            message=f"Research complete. {entries_added} entries indexed.",
+        ).to_dict()
 
     def _run_normal(self, query: str, focus: str) -> dict:
         """Normal depth: Scout → Reader → Critic pipeline."""
@@ -156,10 +163,16 @@ class ResearchPipeline:
             )
             if not scout_result.success:
                 logger.warning("Scout failed, falling back to quick: %s", scout_result.result)
-                return self._run_quick(query, "normal", focus)
+                result = self._run_quick(query, focus)
+                result["requested_depth"] = "normal"
+                result["fallback_reason"] = f"Scout failed: {scout_result.result}"
+                return result
         except Exception as e:
             logger.warning("Scout error, falling back to quick: %s", e)
-            return self._run_quick(query, "normal", focus)
+            result = self._run_quick(query, focus)
+            result["requested_depth"] = "normal"
+            result["fallback_reason"] = f"Scout error: {type(e).__name__}: {e}"
+            return result
 
         # Step 2: Also collect raw sources for indexing
         raw_results, errors = self._collector.collect(query)
@@ -172,14 +185,15 @@ class ResearchPipeline:
         entries_added = self._indexer.index_enriched(query=query, enriched_results=enriched)
         self._indexer.log_research(query=query, depth="normal", focus=focus, result_count=entries_added)
         self.store.save_stream(stream)
-        return {
-            "status": "completed",
-            "depth": "normal",
-            "query": query,
-            "entries_added": entries_added,
-            "errors": errors,
-            "message": f"Research complete (normal). {entries_added} entries indexed with agent analysis.",
-        }
+        return ResearchResult(
+            status="completed",
+            query=query,
+            requested_depth="normal",
+            actual_depth="normal",
+            entries_added=entries_added,
+            errors=errors,
+            message=f"Research complete (normal). {entries_added} entries indexed with agent analysis.",
+        ).to_dict()
 
     def _run_deep(self, query: str, focus: str) -> dict:
         """Deep depth: full 5-agent Dispatcher pipeline."""
@@ -191,25 +205,31 @@ class ResearchPipeline:
             task += f"\n\nFocus: {focus_hint}"
 
         try:
-            result = self.dispatcher.run(task=task, max_iterations=15)
+            dispatcher_result = self.dispatcher.run(task=task, max_iterations=15)
         except Exception as e:
             logger.warning("Deep pipeline failed, falling back to normal: %s", e)
-            return self._run_normal(query, focus)
+            result = self._run_normal(query, focus)
+            result["requested_depth"] = "deep"
+            result["fallback_reason"] = f"Dispatcher failed: {type(e).__name__}: {e}"
+            return result
 
-        if not result.success or not result.result:
+        if not dispatcher_result.success or not dispatcher_result.result:
             logger.warning("Deep pipeline returned no result, falling back to normal")
-            return self._run_normal(query, focus)
+            result = self._run_normal(query, focus)
+            result["requested_depth"] = "deep"
+            result["fallback_reason"] = "Dispatcher returned no result"
+            return result
 
-        entries_added = self._indexer.index_synthesis(query=query, synthesis_text=result.result)
+        entries_added = self._indexer.index_synthesis(query=query, synthesis_text=dispatcher_result.result)
         self._indexer.log_research(query=query, depth="deep", focus=focus, result_count=entries_added)
-        return {
-            "status": "completed",
-            "depth": "deep",
-            "query": query,
-            "entries_added": entries_added,
-            "errors": [],
-            "message": f"Deep research complete. Synthesized report indexed.",
-        }
+        return ResearchResult(
+            status="completed",
+            query=query,
+            requested_depth="deep",
+            actual_depth="deep",
+            entries_added=entries_added,
+            message="Deep research complete. Synthesized report indexed.",
+        ).to_dict()
 
     # ----- agent processing helpers -------------------------------------------
 

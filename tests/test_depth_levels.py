@@ -247,3 +247,32 @@ class TestDeepDepth:
         result = pipeline.run("test", depth="deep")
         # Should fall back to normal, then complete
         assert result["status"] == "completed"
+
+    def test_deep_fallback_exposes_both_depths(self, store):
+        """When deep falls back, requested_depth and actual_depth must differ."""
+        mock_handler = MagicMock()
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.run.side_effect = RuntimeError("LLM unavailable")
+
+        from scholaragent.core.types import AgentResult
+
+        mock_scout = MagicMock()
+        mock_scout.run.return_value = AgentResult(
+            agent_name="scout", task="test", result="found", iterations=1, success=True
+        )
+        mock_registry = MagicMock()
+        mock_registry.get = lambda name: mock_scout
+
+        pipeline = ResearchPipeline(
+            store=store,
+            handler=mock_handler,
+            registry=mock_registry,
+            dispatcher=mock_dispatcher,
+            collector=_mock_collector(),
+        )
+
+        result = pipeline.run("fallback-visibility", depth="deep")
+        assert result["status"] == "completed"
+        assert result["requested_depth"] == "deep"
+        assert result["actual_depth"] in ("normal", "quick")
+        assert result["fallback_reason"]
