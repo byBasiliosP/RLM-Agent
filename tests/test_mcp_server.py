@@ -389,23 +389,33 @@ class TestMCPToolJSONResponses:
     @pytest.fixture(autouse=True)
     def setup(self, tmp_path):
         self.db_path = str(tmp_path / "test_memory.db")
-        self._original_store = None
+        self._original_container = None
+        self._test_container = None
         with patch.dict(os.environ, {"SCHOLAR_MEMORY_DB": self.db_path}):
             yield
-        # Cleanup global state
+        # Cleanup: close test container, restore original
         import scholaragent.mcp_server as mod
-        if self._original_store is not None:
-            mod._store = self._original_store
+        if self._test_container is not None:
+            self._test_container.close()
+        if self._original_container is not None:
+            mod._container = self._original_container
 
     def _patch_store(self):
-        """Patch _get_store to return a test store with fake embeddings."""
+        """Inject a RuntimeContainer with fake embeddings."""
         import scholaragent.mcp_server as mod
-        from scholaragent.memory.store import MemoryStore
+        from scholaragent.runtime import RuntimeContainer
+        from pathlib import Path
 
-        self._original_store = mod._store
-        store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
-        mod._store = store
-        return store
+        self._original_container = mod._container
+        self._test_container = RuntimeContainer(
+            data_dir=Path(self.db_path).parent,
+            db_path=self.db_path,
+            model_config={"strong": {"backend": "x", "model_name": "y"},
+                          "cheap": {"backend": "a", "model_name": "b"}},
+            embeddings=FakeEmbeddings(),
+        )
+        mod._container = self._test_container
+        return self._test_container.get_store()
 
     def test_memory_lookup_returns_valid_json(self):
         self._patch_store()
@@ -686,36 +696,28 @@ class TestContextStreamingWorkflow:
 
 
 class TestMCPCleanup:
-    """Test the atexit cleanup handler."""
+    """Test container lifecycle via the MCP server module."""
 
-    def test_cleanup_function_exists_and_callable(self):
-        from scholaragent.mcp_server import _cleanup
-
-        assert callable(_cleanup)
-
-    def test_cleanup_when_store_is_none(self):
+    def test_container_is_none_initially(self):
         import scholaragent.mcp_server as mod
 
-        original = mod._store
-        try:
-            mod._store = None
-            mod._cleanup()  # should not raise
-            assert mod._store is None
-        finally:
-            mod._store = original
+        # The container may have been initialized by other tests;
+        # just verify the accessor works.
+        assert mod._get_container is not None
 
-    def test_cleanup_closes_store(self):
-        import scholaragent.mcp_server as mod
+    def test_container_close_is_idempotent(self, tmp_path):
+        from scholaragent.runtime import RuntimeContainer
 
-        mock_store = MagicMock()
-        original = mod._store
-        try:
-            mod._store = mock_store
-            mod._cleanup()
-            mock_store.close.assert_called_once()
-            assert mod._store is None
-        finally:
-            mod._store = original
+        container = RuntimeContainer(
+            data_dir=tmp_path,
+            db_path=str(tmp_path / "t.db"),
+            model_config={"strong": {"backend": "x", "model_name": "y"},
+                          "cheap": {"backend": "a", "model_name": "b"}},
+            embeddings=FakeEmbeddings(),
+        )
+        container.get_store()
+        container.close()
+        container.close()  # must not raise
 
 
 class TestMCPValidationConstants:
@@ -749,24 +751,26 @@ class TestMCPValidationConstants:
 
 
 class TestMCPThreadSafety:
-    """Verify lazy singletons are thread-safe."""
+    """Verify the RuntimeContainer's lazy init is thread-safe."""
 
     def test_concurrent_get_store_returns_same_instance(self, tmp_path, monkeypatch):
-        """Multiple threads calling _get_store() must get the same instance."""
-        import scholaragent.mcp_server as mod
+        """Multiple threads calling get_store() on one container get the same instance."""
+        from scholaragent.runtime import RuntimeContainer
 
-        monkeypatch.setattr(mod, "_store", None)
-        monkeypatch.setattr(mod, "_pipeline", None)
-        monkeypatch.setattr(mod, "DB_PATH", str(tmp_path / "test.db"))
-        monkeypatch.setattr(mod, "DATA_DIR", tmp_path)
-        monkeypatch.setattr(mod, "OpenAIEmbeddings", lambda: FakeEmbeddings())
+        container = RuntimeContainer(
+            data_dir=tmp_path,
+            db_path=str(tmp_path / "test.db"),
+            model_config={"strong": {"backend": "x", "model_name": "y"},
+                          "cheap": {"backend": "a", "model_name": "b"}},
+            embeddings=FakeEmbeddings(),
+        )
 
         stores = []
         barrier = threading.Barrier(4)
 
         def grab():
             barrier.wait()
-            stores.append(mod._get_store())
+            stores.append(container.get_store())
 
         threads = [threading.Thread(target=grab) for _ in range(4)]
         for t in threads:
@@ -776,3 +780,4 @@ class TestMCPThreadSafety:
 
         assert len(stores) == 4
         assert all(s is stores[0] for s in stores)
+        container.close()

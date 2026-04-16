@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 from mcp.server.fastmcp import FastMCP
 
-from scholaragent.memory.embeddings import OpenAIEmbeddings
 from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.research import ResearchPipeline
 
@@ -46,15 +45,10 @@ from scholaragent.memory.research import ResearchPipeline
 VALID_DEPTHS = frozenset({"quick", "normal", "deep"})
 VALID_FOCUSES = frozenset({"implementation", "theory", "comparison"})
 
-# --- Global state ---
+# --- Runtime container (replaces former module-level globals) ---
 
-_store: MemoryStore | None = None
-_pipeline: ResearchPipeline | None = None
-_agent_handler = None  # LMHandler, lazy-init
-_agent_registry = None  # AgentRegistry, lazy-init
-_agent_dispatcher = None  # Dispatcher, lazy-init
-_init_lock = threading.Lock()
-_agent_lock = threading.Lock()
+_container = None  # RuntimeContainer, lazy-init
+_container_lock = threading.Lock()
 
 DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
 DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
@@ -80,108 +74,37 @@ def _build_model_config() -> dict:
     return {"strong": strong, "cheap": cheap}
 
 
-def _cleanup():
-    """Close the global memory store on interpreter exit."""
-    global _store
-    if _store is not None:
-        _store.close()
-        _store = None
-
-
-atexit.register(_cleanup)
+def _get_container():
+    """Lazy-init the runtime container (thread-safe)."""
+    global _container
+    if _container is not None:
+        return _container
+    with _container_lock:
+        if _container is not None:
+            return _container
+        from scholaragent.runtime import RuntimeContainer
+        _container = RuntimeContainer(
+            data_dir=DATA_DIR,
+            db_path=DB_PATH,
+            model_config=_build_model_config(),
+        )
+        atexit.register(_container.close)
+        return _container
 
 
 def _get_store() -> MemoryStore:
-    """Lazy-init the global memory store (thread-safe)."""
-    global _store
-    if _store is not None:
-        return _store
-    with _init_lock:
-        if _store is not None:
-            return _store
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        embeddings = OpenAIEmbeddings()
-        _store = MemoryStore(db_path=DB_PATH, embeddings=embeddings)
-        logger.info("Initialized memory store at %s", DB_PATH)
-        return _store
+    return _get_container().get_store()
 
 
 def _get_pipeline() -> ResearchPipeline:
-    """Lazy-init the research pipeline (thread-safe)."""
-    global _pipeline
-    if _pipeline is not None:
-        return _pipeline
-    with _init_lock:
-        if _pipeline is not None:
-            return _pipeline
-        _pipeline = ResearchPipeline(store=_get_store())
-        return _pipeline
-
-
-def _get_agent_infra():
-    """Lazy-init agent infrastructure for normal/deep depth levels (thread-safe).
-
-    Returns (handler, registry, dispatcher).
-    """
-    global _agent_handler, _agent_registry, _agent_dispatcher
-    if _agent_handler is not None:
-        return _agent_handler, _agent_registry, _agent_dispatcher
-
-    with _agent_lock:
-        if _agent_handler is not None:
-            return _agent_handler, _agent_registry, _agent_dispatcher
-
-        from scholaragent.clients.router import ModelConfig, ModelRouter
-        from scholaragent.clients.token_counter import TokenCounter
-        from scholaragent.core.handler import LMHandler
-        from scholaragent.core.registry import AgentRegistry
-        from scholaragent.core.dispatcher import Dispatcher
-        from scholaragent.agents.scout import ScoutAgent
-        from scholaragent.agents.reader import ReaderAgent
-        from scholaragent.agents.critic import CriticAgent
-        from scholaragent.agents.analyst import AnalystAgent
-        from scholaragent.agents.synthesizer import SynthesizerAgent
-
-        config = _build_model_config()
-        router = ModelRouter(
-            strong=ModelConfig(**config["strong"]),
-            cheap=ModelConfig(**config["cheap"]),
-        )
-
-        token_counter = TokenCounter()
-        strong_client = router.get_client("dispatcher")
-        handler = LMHandler(
-            client=strong_client,
-            token_counter=token_counter,
-            verbose=False,
-        )
-        cheap_client = router.get_client("scout")
-        handler.register_client(cheap_client.model_name, cheap_client)
-        handler.start()
-
-        registry = AgentRegistry()
-        registry.register(ScoutAgent())
-        registry.register(ReaderAgent())
-        registry.register(CriticAgent())
-        registry.register(AnalystAgent())
-        registry.register(SynthesizerAgent())
-
-        dispatcher = Dispatcher(registry=registry, handler=handler, store=_get_store())
-
-        _agent_handler = handler
-        _agent_registry = registry
-        _agent_dispatcher = dispatcher
-
-        atexit.register(handler.stop)
-        logger.info("Initialized agent infrastructure: %s", registry.list_agents())
-        return handler, registry, dispatcher
+    return _get_container().get_pipeline()
 
 
 def _ensure_pipeline_agents(pipeline: ResearchPipeline) -> None:
     """Upgrade a pipeline with agent infrastructure if not already set."""
     if pipeline.has_agent_infra:
         return
-    handler, registry, dispatcher = _get_agent_infra()
+    handler, registry, dispatcher = _get_container().get_agent_infra()
     pipeline.set_agent_infra(handler, registry, dispatcher)
 
 
@@ -274,14 +197,12 @@ def _memory_forget(
     return {"deleted": deleted, "query_or_id": query_or_id}
 
 
-def _memory_status(store: MemoryStore) -> dict:
+def _memory_status(store: MemoryStore, token_counter=None) -> dict:
     status = store.status()
-    # Include token usage and cost info if agent infrastructure is active
-    if _agent_handler is not None and hasattr(_agent_handler, "token_counter"):
-        tc = _agent_handler.token_counter
-        if tc is not None:
-            status["token_usage"] = tc.summary()
-            status["estimated_costs"] = tc.cost_summary()
+    # Include token usage and cost info if available
+    if token_counter is not None:
+        status["token_usage"] = token_counter.summary()
+        status["estimated_costs"] = token_counter.cost_summary()
     return status
 
 
@@ -413,7 +334,8 @@ def memory_status() -> str:
 
     Returns total entries, breakdown by source type, and research history.
     """
-    result = _memory_status(_get_store())
+    container = _get_container()
+    result = _memory_status(container.get_store(), token_counter=container.get_token_counter())
     return json.dumps(result, indent=2)
 
 
