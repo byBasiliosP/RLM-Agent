@@ -1,6 +1,5 @@
 """Tests for ContextStream data model, persistence, and agent integration."""
 
-import json
 import pytest
 
 from scholaragent.core.context import ContextStream, PipelineState, StreamEvent
@@ -264,11 +263,12 @@ class TestMemoryStoreStreams:
         assert results[0]["query"] == "second"
 
 
-from unittest.mock import MagicMock, patch
-from scholaragent.core.types import AgentResult, ModelUsageSummary, UsageSummary
+from unittest.mock import patch
+
 from scholaragent.clients.base import BaseLM
 from scholaragent.core.agent import SpecialistAgent
 from scholaragent.core.handler import LMHandler
+from scholaragent.core.types import ModelUsageSummary, UsageSummary
 
 
 class FakeLM(BaseLM):

@@ -1,6 +1,7 @@
 """Scout agent -- finds relevant scientific papers."""
 
 from scholaragent.core.agent import SpecialistAgent
+from scholaragent.sources.github import search_github_code
 from scholaragent.tools.arxiv import search_arxiv
 from scholaragent.tools.pdf_extractor import fetch_arxiv_pdf
 from scholaragent.tools.semantic_scholar import (
@@ -8,7 +9,6 @@ from scholaragent.tools.semantic_scholar import (
     get_references,
     search_semantic_scholar,
 )
-from scholaragent.sources.github import search_github_code
 
 
 class ScoutAgent(SpecialistAgent):

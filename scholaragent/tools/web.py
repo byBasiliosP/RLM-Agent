@@ -69,10 +69,16 @@ class _BrowserManager:
             if self._browser is not None:
                 return
 
+            try:
+                from playwright.sync_api import sync_playwright
+            except ImportError as e:
+                raise RuntimeError(
+                    "playwright is not installed. Install with: "
+                    "pip install 'scholaragent[web]'"
+                ) from e
+
             if not self._is_chromium_installed():
                 self._install_chromium()
-
-            from playwright.sync_api import sync_playwright
 
             self._playwright = sync_playwright().start()
             self._browser = self._playwright.chromium.launch(headless=True)

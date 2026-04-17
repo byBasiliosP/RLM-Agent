@@ -2,14 +2,13 @@
 
 import pytest
 
+from scholaragent.agents.analyst import AnalystAgent
+from scholaragent.agents.critic import CriticAgent
+from scholaragent.agents.reader import ReaderAgent
+from scholaragent.agents.scout import ScoutAgent
+from scholaragent.agents.synthesizer import SynthesizerAgent
 from scholaragent.core.agent import SpecialistAgent
 from scholaragent.core.registry import AgentRegistry
-
-from scholaragent.agents.scout import ScoutAgent
-from scholaragent.agents.reader import ReaderAgent
-from scholaragent.agents.critic import CriticAgent
-from scholaragent.agents.analyst import AnalystAgent
-from scholaragent.agents.synthesizer import SynthesizerAgent
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -159,6 +158,7 @@ class TestSynthesizerAgent:
 # ---------------------------------------------------------------------------
 
 from scholaragent.agents.linter import LinterAgent
+
 
 @pytest.fixture
 def linter():

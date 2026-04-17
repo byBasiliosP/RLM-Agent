@@ -15,10 +15,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+from scholaragent.sources.docs import search_docs
+from scholaragent.sources.github import search_github_code
 from scholaragent.tools.arxiv import search_arxiv
 from scholaragent.tools.semantic_scholar import search_semantic_scholar
-from scholaragent.sources.github import search_github_code
-from scholaragent.sources.docs import search_docs
 
 # Expected network/parse failures; other exceptions are logged with full
 # traceback (see _log_source_error) so programming errors still surface.

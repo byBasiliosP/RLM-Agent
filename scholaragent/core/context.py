@@ -12,8 +12,7 @@ import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 
 def _default_flush_every() -> int:
@@ -66,7 +65,7 @@ class StreamEvent:
     agent: str
     event_type: str
     data: dict
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict:
         return {
@@ -82,7 +81,7 @@ class StreamEvent:
             agent=d["agent"],
             event_type=d["event_type"],
             data=d["data"],
-            timestamp=d.get("timestamp", datetime.now(timezone.utc).isoformat()),
+            timestamp=d.get("timestamp", datetime.now(UTC).isoformat()),
         )
 
 
@@ -145,8 +144,8 @@ class ContextStream:
 
     query: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     state: PipelineState = field(default_factory=PipelineState)
     traces: dict[str, list[dict]] = field(default_factory=dict)
     events: list[StreamEvent] = field(default_factory=list)
@@ -163,7 +162,7 @@ class ContextStream:
         """
         event = StreamEvent(agent=agent, event_type=event_type, data=data)
         self.events.append(event)
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
         updater = _STATE_UPDATERS.get(event_type)
         if updater is not None:
@@ -180,7 +179,7 @@ class ContextStream:
         Always flushes pending pushes along with the trace update.
         """
         self.traces[agent] = messages
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
         if self.on_save is not None:
             self.on_save(self)

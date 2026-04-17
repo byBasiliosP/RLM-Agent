@@ -1,11 +1,10 @@
 """Tests for RateLimiter."""
 
 import time
-from unittest.mock import patch
 
 import pytest
 
-from scholaragent.clients.rate_limiter import RateLimiter, PROVIDER_DEFAULTS
+from scholaragent.clients.rate_limiter import PROVIDER_DEFAULTS, RateLimiter
 
 
 class TestRateLimiterCreation:

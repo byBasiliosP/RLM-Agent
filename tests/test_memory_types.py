@@ -1,6 +1,7 @@
 """Tests for memory data types."""
 import pytest
 
+
 class TestMemoryEntry:
     def test_creation(self):
         from scholaragent.memory.types import MemoryEntry

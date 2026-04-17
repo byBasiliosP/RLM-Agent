@@ -5,7 +5,6 @@ import tempfile
 import threading
 
 import pytest
-from unittest.mock import MagicMock
 
 from tests.helpers import FakeEmbeddings
 

@@ -10,7 +10,6 @@ manifest disagrees with the actual `@mcp.tool()` decorators in
 
 from __future__ import annotations
 
-
 MCP_TOOLS: tuple[str, ...] = (
     "memory_lookup",
     "memory_get",

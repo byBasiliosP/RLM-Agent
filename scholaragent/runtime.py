@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 logger = logging.getLogger(__name__)
 
 from scholaragent.memory.embeddings import EmbeddingBackend, OpenAIEmbeddings
-from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.research import ResearchPipeline
+from scholaragent.memory.store import MemoryStore
 
 if TYPE_CHECKING:
     from scholaragent.clients.token_counter import TokenCounter

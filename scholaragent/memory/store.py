@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from scholaragent.memory.embeddings import EmbeddingBackend, cosine_similarity
@@ -29,7 +28,7 @@ class MemoryStore:
         self._conn.row_factory = sqlite3.Row
         self._create_tables()
 
-    def __enter__(self) -> "MemoryStore":
+    def __enter__(self) -> MemoryStore:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
@@ -257,7 +256,7 @@ class MemoryStore:
     ) -> list[ResearchLogEntry]:
         """Find recent research log entries matching query text."""
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=days)
+            datetime.now(UTC) - timedelta(days=days)
         ).isoformat()
         with self._lock:
             rows = self._conn.execute(

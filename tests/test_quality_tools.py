@@ -1,7 +1,5 @@
 """Tests for framework detection and tool runner utilities."""
 
-import os
-import pytest
 
 from scholaragent.tools.quality import detect_framework, run_tool_or_fallback
 

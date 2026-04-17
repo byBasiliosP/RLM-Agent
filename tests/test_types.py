@@ -1,18 +1,18 @@
 """Tests for scholaragent core types."""
 
 import pytest
+
 from scholaragent.core.types import (
-    ModelUsageSummary,
-    UsageSummary,
-    PaperMetadata,
-    PaperFindings,
-    PaperAssessment,
-    ResearchReport,
+    AgentIteration,
     AgentResult,
     CodeBlock,
-    AgentIteration,
+    ModelUsageSummary,
+    PaperAssessment,
+    PaperFindings,
+    PaperMetadata,
+    ResearchReport,
+    UsageSummary,
 )
-
 
 # --- Fixtures ---
 

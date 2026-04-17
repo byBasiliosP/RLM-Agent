@@ -6,10 +6,14 @@ Protocol: 4-byte big-endian length prefix + JSON payload.
 
 from socketserver import StreamRequestHandler, ThreadingTCPServer
 from threading import Thread
+from typing import TYPE_CHECKING
 
 from scholaragent.clients.base import BaseLM
 from scholaragent.clients.token_counter import TokenCounter
 from scholaragent.core.comms import socket_recv, socket_send
+
+if TYPE_CHECKING:
+    from scholaragent.utils.cache import LLMCache
 
 
 class LMRequestHandler(StreamRequestHandler):

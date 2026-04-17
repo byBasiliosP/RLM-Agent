@@ -2,7 +2,7 @@
 
 import pytest
 
-from scholaragent.environments.base import BaseEnv, REPLResult, RESERVED_NAMES
+from scholaragent.environments.base import RESERVED_NAMES, BaseEnv, REPLResult
 from scholaragent.environments.local_repl import LocalREPL
 
 

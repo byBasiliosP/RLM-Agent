@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 
 from mcp.server.fastmcp import FastMCP
 
-from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.research import ResearchPipeline
+from scholaragent.memory.store import MemoryStore
 
 # --- Validation constants ---
 
@@ -70,28 +70,16 @@ def _validate_text(name: str, value: str, max_len: int, allow_empty: bool = Fals
 _container = None  # RuntimeContainer, lazy-init
 _container_lock = threading.Lock()
 
+# Resolved at first container access so tests can monkeypatch env vars.
 DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
 DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
 
 
 def _build_model_config() -> dict:
     """Build strong/cheap model config dicts from environment variables."""
-    lmstudio_url = os.environ.get("SCHOLAR_LMSTUDIO_URL", "http://localhost:1234/v1")
+    from scholaragent.config import ScholarConfig
 
-    strong_backend = os.environ.get("SCHOLAR_STRONG_BACKEND", "anthropic")
-    strong_model = os.environ.get("SCHOLAR_STRONG_MODEL", "claude-sonnet-4-6")
-    cheap_backend = os.environ.get("SCHOLAR_CHEAP_BACKEND", "openai")
-    cheap_model = os.environ.get("SCHOLAR_CHEAP_MODEL", "gpt-4o-mini")
-
-    strong = {"backend": strong_backend, "model_name": strong_model}
-    cheap = {"backend": cheap_backend, "model_name": cheap_model}
-
-    if strong_backend == "lmstudio":
-        strong["base_url"] = lmstudio_url
-    if cheap_backend == "lmstudio":
-        cheap["base_url"] = lmstudio_url
-
-    return {"strong": strong, "cheap": cheap}
+    return ScholarConfig.from_env().model_config_dict()
 
 
 def _get_container():
@@ -102,11 +90,14 @@ def _get_container():
     with _container_lock:
         if _container is not None:
             return _container
+        from scholaragent.config import ScholarConfig
         from scholaragent.runtime import RuntimeContainer
+
+        cfg = ScholarConfig.from_env()
         _container = RuntimeContainer(
-            data_dir=DATA_DIR,
-            db_path=DB_PATH,
-            model_config=_build_model_config(),
+            data_dir=cfg.data_dir,
+            db_path=cfg.db_path,
+            model_config=cfg.model_config_dict(),
         )
         atexit.register(_container.close)
         return _container

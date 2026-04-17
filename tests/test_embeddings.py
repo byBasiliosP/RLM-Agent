@@ -1,7 +1,8 @@
 """Tests for embedding backends."""
-import pytest
-from unittest.mock import patch, MagicMock
 import os
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 
 class TestEmbeddingBackendABC:
@@ -11,8 +12,9 @@ class TestEmbeddingBackendABC:
             EmbeddingBackend()
 
     def test_has_required_methods(self):
-        from scholaragent.memory.embeddings import EmbeddingBackend
         import inspect
+
+        from scholaragent.memory.embeddings import EmbeddingBackend
         assert hasattr(EmbeddingBackend, "embed")
         assert hasattr(EmbeddingBackend, "embed_batch")
         assert inspect.isabstract(EmbeddingBackend)

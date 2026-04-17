@@ -6,16 +6,15 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from scholaragent.core.agent import SpecialistAgent
+from scholaragent.core.context import ContextStream
 from scholaragent.core.handler import LMHandler
 from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.types import AgentResult
 from scholaragent.utils.prompts import DISPATCHER_SYSTEM_PROMPT
 
-from scholaragent.core.context import ContextStream
-
 if TYPE_CHECKING:
-    from scholaragent.utils.budget import Budget
     from scholaragent.memory.store import MemoryStore
+    from scholaragent.utils.budget import Budget
 
 
 class Dispatcher(SpecialistAgent):

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import httpx
 import openai
-
-from typing import TYPE_CHECKING
 
 from scholaragent.clients.base import BaseLM
 from scholaragent.utils.retry import retry_with_backoff
@@ -24,7 +24,7 @@ class OpenAIClient(BaseLM):
         base_url: str | None = None,
         timeout: float = 120.0,
         max_tokens: int | None = None,
-        rate_limiter: "RateLimiter | None" = None,
+        rate_limiter: RateLimiter | None = None,
     ):
         super().__init__(model_name, timeout=timeout, max_tokens=max_tokens, rate_limiter=rate_limiter)
         self._sync_client = openai.OpenAI(
@@ -37,7 +37,7 @@ class OpenAIClient(BaseLM):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _record_usage(self, usage) -> None:  # noqa: ANN001
+    def _record_usage(self, usage) -> None:
         """Update tracked token counts from an API response usage object."""
         if usage is None:
             return

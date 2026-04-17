@@ -14,17 +14,14 @@ For inline text results (Synthesizer), we use FINAL() outside code blocks.
 
 import json
 
-import pytest
-
-from scholaragent.core.handler import LMHandler
-from scholaragent.clients.base import BaseLM
-from scholaragent.core.types import AgentResult, UsageSummary, ModelUsageSummary
-from scholaragent.agents.scout import ScoutAgent
-from scholaragent.agents.reader import ReaderAgent
-from scholaragent.agents.critic import CriticAgent
 from scholaragent.agents.analyst import AnalystAgent
+from scholaragent.agents.critic import CriticAgent
+from scholaragent.agents.reader import ReaderAgent
+from scholaragent.agents.scout import ScoutAgent
 from scholaragent.agents.synthesizer import SynthesizerAgent
-
+from scholaragent.clients.base import BaseLM
+from scholaragent.core.handler import LMHandler
+from scholaragent.core.types import AgentResult, ModelUsageSummary, UsageSummary
 
 # ---- Helpers ----------------------------------------------------------------
 

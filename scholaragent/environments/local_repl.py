@@ -21,7 +21,7 @@ import threading
 from typing import Any
 
 from scholaragent.core.comms import socket_request
-from scholaragent.environments.base import BaseEnv, REPLResult, RESERVED_NAMES
+from scholaragent.environments.base import RESERVED_NAMES, BaseEnv, REPLResult
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ def _run_code(code: str, namespace: dict) -> None:
     # Python's exec() is used intentionally here - this is a REPL environment
     # designed to execute code strings from the agent. Safety is enforced via
     # the restricted builtins dict, not by avoiding exec.
-    exec(code, namespace, namespace)  # noqa: S102
+    exec(code, namespace, namespace)
 
 
 class LocalREPL(BaseEnv):
