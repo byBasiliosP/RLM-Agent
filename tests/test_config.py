@@ -12,9 +12,7 @@ from scholaragent.config import (
 
 class TestScholarConfigDefaults:
     def test_defaults_match_previous_behavior(self, monkeypatch):
-        # Clear all SCHOLAR_ env vars
-        for key in list(monkeypatch._setitem):  # no-op; just clarity
-            pass
+        # Clear all SCHOLAR_ env vars that affect defaults
         for var in (
             "SCHOLAR_STRONG_BACKEND",
             "SCHOLAR_CHEAP_BACKEND",
