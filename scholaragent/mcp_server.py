@@ -42,7 +42,7 @@ from scholaragent.memory.store import MemoryStore
 
 VALID_DEPTHS = frozenset({"quick", "normal", "deep"})
 VALID_FOCUSES = frozenset({"implementation", "theory", "comparison"})
-VALID_SOURCE_TYPES = frozenset({"paper", "code", "docs"})
+VALID_SOURCE_TYPES = frozenset({"paper", "code", "docs", "synthesized_report"})
 
 # Input length limits (characters)
 MAX_QUERY_LEN = 2000
