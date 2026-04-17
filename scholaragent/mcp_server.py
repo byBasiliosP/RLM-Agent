@@ -244,6 +244,7 @@ def _memory_stream_list(
         if err := _validate_text("query", query, MAX_QUERY_LEN, allow_empty=True):
             return {"error": err}
         query = query.strip() or None
+        query = query.strip() or None
     streams = store.list_streams(query=query, limit=limit)
     return {"streams": streams}
 
