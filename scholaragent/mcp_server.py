@@ -29,9 +29,7 @@ Model backend configuration via environment variables:
 import atexit
 import json
 import logging
-import os
 import threading
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +67,6 @@ def _validate_text(name: str, value: str, max_len: int, allow_empty: bool = Fals
 
 _container = None  # RuntimeContainer, lazy-init
 _container_lock = threading.Lock()
-
-# Resolved at first container access so tests can monkeypatch env vars.
-DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
-DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
 
 
 def _build_model_config() -> dict:
@@ -249,6 +243,7 @@ def _memory_stream_list(
     if query is not None:
         if err := _validate_text("query", query, MAX_QUERY_LEN, allow_empty=True):
             return {"error": err}
+        query = query.strip() or None
     streams = store.list_streams(query=query, limit=limit)
     return {"streams": streams}
 

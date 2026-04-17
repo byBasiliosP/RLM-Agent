@@ -185,7 +185,6 @@ class ResearchPipeline:
         entries_added = self._indexer.index_enriched(query=query, enriched_results=enriched)
         self._indexer.log_research(query=query, depth="normal", focus=focus, result_count=entries_added)
         stream.flush()
-        self.store.save_stream(stream)
         return ResearchResult(
             status="completed",
             query=query,
