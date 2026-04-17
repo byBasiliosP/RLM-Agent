@@ -1,17 +1,19 @@
 """Framework detection and hybrid tool runner utilities for code quality agents."""
 
 import json
-import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
+
+from scholaragent.config import ScholarConfig
 
 
 def _safe_project_path(project_path: str) -> Path:
     """Resolve and validate a user-supplied project path.
 
     Rejects paths that don't exist or aren't directories. If
-    SCHOLAR_PROJECT_ROOT is set, also rejects paths outside that root.
+    ScholarConfig.project_root is set (via SCHOLAR_PROJECT_ROOT), also
+    rejects paths outside that root.
 
     Raises:
         ValueError: if the path is invalid or outside the allowed root.
@@ -23,7 +25,7 @@ def _safe_project_path(project_path: str) -> Path:
         raise ValueError(f"project_path does not exist: {project_path}")
     if not resolved.is_dir():
         raise ValueError(f"project_path is not a directory: {project_path}")
-    root_str = os.environ.get("SCHOLAR_PROJECT_ROOT")
+    root_str = ScholarConfig.from_env().project_root
     if root_str:
         root = Path(root_str).expanduser().resolve()
         try:

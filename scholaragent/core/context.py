@@ -8,7 +8,6 @@ via a save callback.
 
 from __future__ import annotations
 
-import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -16,9 +15,11 @@ from datetime import UTC, datetime
 
 
 def _default_flush_every() -> int:
-    """Number of pushes between automatic saves. Override with SCHOLAR_CONTEXT_FLUSH_EVERY."""
+    """Number of pushes between automatic saves (from ScholarConfig)."""
+    from scholaragent.config import ScholarConfig
+
     try:
-        return max(1, int(os.environ.get("SCHOLAR_CONTEXT_FLUSH_EVERY", "10")))
+        return ScholarConfig.from_env().context_flush_every
     except ValueError:
         return 10
 

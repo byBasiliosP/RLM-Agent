@@ -81,8 +81,6 @@ class RuntimeContainer:
             if self._agent_handler is not None:
                 return self._agent_handler, self._agent_registry, self._agent_dispatcher
 
-            import os
-
             from scholaragent.agents.analyst import AnalystAgent
             from scholaragent.agents.critic import CriticAgent
             from scholaragent.agents.linter import LinterAgent
@@ -91,6 +89,7 @@ class RuntimeContainer:
             from scholaragent.agents.synthesizer import SynthesizerAgent
             from scholaragent.clients.router import ModelConfig, ModelRouter
             from scholaragent.clients.token_counter import TokenCounter
+            from scholaragent.config import ScholarConfig
             from scholaragent.core.dispatcher import Dispatcher
             from scholaragent.core.handler import LMHandler
             from scholaragent.core.registry import AgentRegistry
@@ -103,7 +102,7 @@ class RuntimeContainer:
             token_counter = TokenCounter()
             strong_client = router.get_client("dispatcher")
             cache = None
-            if os.environ.get("SCHOLAR_LLM_CACHE_DISABLE", "").lower() not in ("1", "true", "yes"):
+            if not ScholarConfig.from_env().llm_cache_disable:
                 try:
                     cache = LLMCache(cache_dir=self.data_dir / "llm_cache")
                 except OSError:
