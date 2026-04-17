@@ -12,6 +12,9 @@ class FakeEmbeddings:
         h = hash(text) % 1000
         return [h / 1000.0, (h * 2 % 1000) / 1000.0, (h * 3 % 1000) / 1000.0]
 
+    def embed_batch(self, texts):
+        return [self.embed(t) for t in texts]
+
 
 @pytest.fixture
 def store():

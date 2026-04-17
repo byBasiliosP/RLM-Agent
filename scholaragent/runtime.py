@@ -81,6 +81,8 @@ class RuntimeContainer:
             if self._agent_handler is not None:
                 return self._agent_handler, self._agent_registry, self._agent_dispatcher
 
+            import os
+
             from scholaragent.agents.analyst import AnalystAgent
             from scholaragent.agents.critic import CriticAgent
             from scholaragent.agents.linter import LinterAgent
@@ -92,6 +94,7 @@ class RuntimeContainer:
             from scholaragent.core.dispatcher import Dispatcher
             from scholaragent.core.handler import LMHandler
             from scholaragent.core.registry import AgentRegistry
+            from scholaragent.utils.cache import LLMCache
 
             router = ModelRouter(
                 strong=ModelConfig(**self._model_config["strong"]),
@@ -99,8 +102,14 @@ class RuntimeContainer:
             )
             token_counter = TokenCounter()
             strong_client = router.get_client("dispatcher")
+            cache = None
+            if os.environ.get("SCHOLAR_LLM_CACHE_DISABLE", "").lower() not in ("1", "true", "yes"):
+                try:
+                    cache = LLMCache(cache_dir=self.data_dir / "llm_cache")
+                except OSError:
+                    logger.warning("Failed to initialize LLM cache; continuing without it")
             handler = LMHandler(
-                client=strong_client, token_counter=token_counter, verbose=False
+                client=strong_client, token_counter=token_counter, cache=cache, verbose=False
             )
             cheap_client = router.get_client("scout")
             handler.register_client(cheap_client.model_name, cheap_client)

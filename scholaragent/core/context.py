@@ -8,11 +8,20 @@ via a save callback.
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+
+def _default_flush_every() -> int:
+    """Number of pushes between automatic saves. Override with SCHOLAR_CONTEXT_FLUSH_EVERY."""
+    try:
+        return max(1, int(os.environ.get("SCHOLAR_CONTEXT_FLUSH_EVERY", "10")))
+    except ValueError:
+        return 10
 
 
 @dataclass
@@ -142,9 +151,16 @@ class ContextStream:
     traces: dict[str, list[dict]] = field(default_factory=dict)
     events: list[StreamEvent] = field(default_factory=list)
     on_save: Callable[[ContextStream], None] | None = field(default=None, repr=False)
+    flush_every: int = field(default_factory=_default_flush_every, repr=False)
+    _pending_pushes: int = field(default=0, repr=False)
 
     def push(self, agent: str, event_type: str, data: dict) -> None:
-        """Record an incremental update from an agent mid-execution."""
+        """Record an incremental update from an agent mid-execution.
+
+        Saves to `on_save` only every `flush_every` pushes to avoid a DB
+        write on every event. Callers that need guaranteed durability
+        should call `flush()` at commit/shutdown points.
+        """
         event = StreamEvent(agent=agent, event_type=event_type, data=data)
         self.events.append(event)
         self.updated_at = datetime.now(timezone.utc).isoformat()
@@ -153,16 +169,28 @@ class ContextStream:
         if updater is not None:
             updater(self.state, data)
 
-        if self.on_save is not None:
+        self._pending_pushes += 1
+        if self.on_save is not None and self._pending_pushes >= self.flush_every:
             self.on_save(self)
+            self._pending_pushes = 0
 
     def commit(self, agent: str, messages: list[dict]) -> None:
-        """Save an agent's conversation trace as a final snapshot."""
+        """Save an agent's conversation trace as a final snapshot.
+
+        Always flushes pending pushes along with the trace update.
+        """
         self.traces[agent] = messages
         self.updated_at = datetime.now(timezone.utc).isoformat()
 
         if self.on_save is not None:
             self.on_save(self)
+            self._pending_pushes = 0
+
+    def flush(self) -> None:
+        """Force-save any pending pushes. No-op if clean or no callback."""
+        if self.on_save is not None and self._pending_pushes > 0:
+            self.on_save(self)
+            self._pending_pushes = 0
 
     def read(self, agent: str | None = None) -> dict:
         """Read stream data, optionally filtered to a single agent."""

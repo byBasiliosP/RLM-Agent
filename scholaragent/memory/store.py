@@ -102,6 +102,43 @@ class MemoryStore:
             )
             self._conn.commit()
 
+    def add_many(self, entries: list[MemoryEntry]) -> None:
+        """Add multiple entries efficiently.
+
+        Embeds all entries missing embeddings in a single batch call, then
+        writes everything in one transaction. Safe to call with an empty
+        list.
+        """
+        if not entries:
+            return
+        needing = [e for e in entries if not e.embedding]
+        if needing:
+            vectors = self.embeddings.embed_batch([e.content for e in needing])
+            for entry, vec in zip(needing, vectors, strict=True):
+                entry.embedding = vec
+        rows = [
+            (
+                e.id,
+                e.content,
+                e.summary,
+                e.source_type,
+                e.source_ref,
+                json.dumps(e.tags),
+                json.dumps(e.embedding),
+                e.created_at,
+                e.access_count,
+            )
+            for e in entries
+        ]
+        with self._lock:
+            self._conn.executemany(
+                """INSERT OR REPLACE INTO entries
+                   (id, content, summary, source_type, source_ref, tags, embedding, created_at, access_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+            self._conn.commit()
+
     def get(self, entry_id: str) -> MemoryEntry | None:
         """Retrieve a single entry by ID."""
         with self._lock:

@@ -122,6 +122,7 @@ class Dispatcher(SpecialistAgent):
 
         # Final persist
         if self._store is not None:
+            self._stream.flush()
             self._store.save_stream(self._stream)
 
         return result

@@ -352,3 +352,71 @@ class TestMemoryStoreLifecycle:
             s.close()
             s.close()  # must not raise
             assert s._closed is True
+
+
+class TestMemoryStoreAddMany:
+    """Verify batch insert calls embed_batch once and inserts all rows."""
+
+    def test_add_many_uses_batch_embed(self, store):
+        from scholaragent.memory.types import MemoryEntry
+
+        call_count = {"embed": 0, "batch": 0}
+        real_embed = store.embeddings.embed
+        real_batch = store.embeddings.embed_batch
+
+        def counted_embed(text):
+            call_count["embed"] += 1
+            return real_embed(text)
+
+        def counted_batch(texts):
+            call_count["batch"] += 1
+            return real_batch(texts)
+
+        store.embeddings.embed = counted_embed
+        store.embeddings.embed_batch = counted_batch
+
+        entries = [
+            MemoryEntry(
+                content=f"content {i}",
+                summary=f"sum {i}",
+                source_type="paper",
+                source_ref=f"ref-{i}",
+                tags=["batch"],
+            )
+            for i in range(5)
+        ]
+        store.add_many(entries)
+        assert store.count() == 5
+        # Single batch call (FakeEmbeddings' embed_batch may internally fan
+        # out, but the store only calls embed_batch once per add_many).
+        assert call_count["batch"] == 1
+
+    def test_add_many_empty_list_is_noop(self, store):
+        store.add_many([])
+        assert store.count() == 0
+
+    def test_add_many_preserves_existing_embeddings(self, store):
+        from scholaragent.memory.types import MemoryEntry
+
+        batch_calls = {"n": 0}
+        real_batch = store.embeddings.embed_batch
+
+        def counted_batch(texts):
+            batch_calls["n"] += 1
+            return real_batch(texts)
+
+        store.embeddings.embed_batch = counted_batch
+
+        entries = [
+            MemoryEntry(
+                content="pre-embedded",
+                summary="x",
+                source_type="paper",
+                source_ref="ref-p",
+                tags=[],
+                embedding=[0.1, 0.2, 0.3],
+            ),
+        ]
+        store.add_many(entries)
+        assert store.count() == 1
+        assert batch_calls["n"] == 0  # no batch call needed
