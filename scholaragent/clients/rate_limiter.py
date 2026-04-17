@@ -19,6 +19,10 @@ class RateLimiter:
     """Thread-safe sliding-window rate limiter with RPM and TPM limits."""
 
     def __init__(self, rpm: int = 60, tpm: int = 90_000):
+        if rpm <= 0:
+            raise ValueError(f"rpm must be positive, got {rpm}")
+        if tpm <= 0:
+            raise ValueError(f"tpm must be positive, got {tpm}")
         self.rpm = rpm
         self.tpm = tpm
         self._lock = threading.Lock()

@@ -23,10 +23,23 @@ class MemoryStore:
         self.db_path = db_path
         self.embeddings = embeddings
         self._lock = threading.Lock()
+        self._closed = False
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.row_factory = sqlite3.Row
         self._create_tables()
+
+    def __enter__(self) -> "MemoryStore":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _create_tables(self) -> None:
         with self._lock:
@@ -321,8 +334,11 @@ class MemoryStore:
         return results
 
     def close(self) -> None:
-        """Close the database connection."""
+        """Close the database connection. Idempotent."""
         with self._lock:
+            if self._closed:
+                return
+            self._closed = True
             self._conn.close()
 
     def _row_to_entry(self, row: sqlite3.Row) -> MemoryEntry:

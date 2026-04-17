@@ -49,3 +49,21 @@ class TestRateLimiterTPM:
         rl.record_tokens(3000)
         rl.record_tokens(2000)
         assert rl._current_window_tokens() == 5000
+
+
+class TestRateLimiterValidation:
+    def test_zero_rpm_rejected(self):
+        with pytest.raises(ValueError, match="rpm must be positive"):
+            RateLimiter(rpm=0, tpm=1000)
+
+    def test_negative_rpm_rejected(self):
+        with pytest.raises(ValueError, match="rpm must be positive"):
+            RateLimiter(rpm=-1, tpm=1000)
+
+    def test_zero_tpm_rejected(self):
+        with pytest.raises(ValueError, match="tpm must be positive"):
+            RateLimiter(rpm=60, tpm=0)
+
+    def test_negative_tpm_rejected(self):
+        with pytest.raises(ValueError, match="tpm must be positive"):
+            RateLimiter(rpm=60, tpm=-1)

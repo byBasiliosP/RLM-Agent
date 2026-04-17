@@ -83,6 +83,7 @@ class RuntimeContainer:
 
             from scholaragent.agents.analyst import AnalystAgent
             from scholaragent.agents.critic import CriticAgent
+            from scholaragent.agents.linter import LinterAgent
             from scholaragent.agents.reader import ReaderAgent
             from scholaragent.agents.scout import ScoutAgent
             from scholaragent.agents.synthesizer import SynthesizerAgent
@@ -108,7 +109,7 @@ class RuntimeContainer:
             registry = AgentRegistry()
             for agent in (
                 ScoutAgent(), ReaderAgent(), CriticAgent(),
-                AnalystAgent(), SynthesizerAgent(),
+                AnalystAgent(), SynthesizerAgent(), LinterAgent(),
             ):
                 registry.register(agent)
 

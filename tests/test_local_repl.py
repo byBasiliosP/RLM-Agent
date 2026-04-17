@@ -341,3 +341,20 @@ class TestLocalREPLSandboxSecurity:
         result = repl.execute_code("print(math.sqrt(16))")
         assert result.error is None
         assert "4.0" in result.output
+
+
+class TestLocalREPLScaffoldRestoration:
+    """Verify scaffold is restored even when user code raises."""
+
+    def test_scaffold_restored_after_exception(self):
+        repl = LocalREPL()
+        # User code overrides FINAL_VAR then raises -- scaffold must restore
+        result = repl.execute_code("FINAL_VAR = 'overwritten'\nraise RuntimeError('boom')")
+        assert result.error is not None
+        assert callable(repl.globals.get("FINAL_VAR"))
+
+    def test_scaffold_restored_after_llm_query_override_and_error(self):
+        repl = LocalREPL()
+        result = repl.execute_code("llm_query = 'not_a_function'\n1/0")
+        assert result.error is not None
+        assert callable(repl.globals.get("llm_query"))

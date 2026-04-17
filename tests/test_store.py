@@ -331,3 +331,24 @@ class TestMemoryStoreConcurrency:
 
         assert errors == [], f"Concurrent read/write raised errors: {errors}"
         assert store.count() == 10
+
+
+class TestMemoryStoreLifecycle:
+    def test_context_manager_closes(self):
+        from scholaragent.memory.store import MemoryStore
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "lifecycle.db")
+            with MemoryStore(db_path=db_path, embeddings=FakeEmbeddings()) as s:
+                assert s.count() == 0
+            assert s._closed is True
+
+    def test_double_close_is_noop(self):
+        from scholaragent.memory.store import MemoryStore
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "lifecycle.db")
+            s = MemoryStore(db_path=db_path, embeddings=FakeEmbeddings())
+            s.close()
+            s.close()  # must not raise
+            assert s._closed is True
