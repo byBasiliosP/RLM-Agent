@@ -2,13 +2,19 @@
 set -euo pipefail
 
 # ScholarAgent Installer
-# Usage: ./install.sh          # Install and register MCP server
-#        ./install.sh --uninstall  # Remove MCP server from all agents
+# Usage: ./install.sh                         # Install with cloud backend (OpenAI + Anthropic)
+#        ./install.sh --backend lmstudio      # Install with local LM Studio backend
+#        ./install.sh --uninstall             # Remove MCP server from all agents
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.venv"
 SERVER_CMD="${VENV_DIR}/bin/scholaragent-server"
 MCP_SERVER_NAME="scholar-memory"
+
+BACKEND="cloud"
+STRONG_MODEL=""
+CHEAP_MODEL=""
+ASSUME_YES=0
 
 # Colors
 RED='\033[0;31m'
@@ -22,80 +28,57 @@ ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 
-# --- Agent config paths (parallel arrays for Bash 3.2 compat) ---
-
-AGENT_NAMES=("Claude Code" "Cursor" "Windsurf" "VS Code")
-AGENT_PATHS=(
-    "${HOME}/.claude/settings.json"
-    "${HOME}/.cursor/mcp.json"
-    "${HOME}/.windsurf/mcp.json"
-    "${HOME}/.vscode/mcp.json"
-)
-
-# --- JSON helpers (use Python to avoid jq dependency) ---
-
-_json_add_mcp() {
-    local config_path="$1"
-    "${VENV_DIR}/bin/python" - "$config_path" "$SERVER_CMD" "$MCP_SERVER_NAME" <<'PYEOF'
-import json, sys, os
-
-config_path = sys.argv[1]
-server_cmd = sys.argv[2]
-server_name = sys.argv[3]
-
-if os.path.exists(config_path):
-    with open(config_path) as f:
-        try:
-            config = json.load(f)
-        except json.JSONDecodeError:
-            config = {}
-else:
-    config = {}
-
-if "mcpServers" not in config:
-    config["mcpServers"] = {}
-
-config["mcpServers"][server_name] = {
-    "command": server_cmd,
-}
-
-os.makedirs(os.path.dirname(config_path), exist_ok=True)
-
-with open(config_path, "w") as f:
-    json.dump(config, f, indent=2)
-    f.write("\n")
-PYEOF
-}
-
-_json_remove_mcp() {
-    local config_path="$1"
-    if [[ ! -f "$config_path" ]]; then
-        return 0
+# Quick check: is an LM Studio server listening on localhost:1234?
+_lmstudio_running() {
+    local url="${SCHOLAR_LMSTUDIO_URL:-http://localhost:1234/v1}/models"
+    if command -v curl &>/dev/null; then
+        curl -fsS --max-time 1 "$url" >/dev/null 2>&1
+        return $?
     fi
-    "${VENV_DIR}/bin/python" - "$config_path" "$MCP_SERVER_NAME" <<'PYEOF'
-import json, sys, os
+    return 1
+}
 
-config_path = sys.argv[1]
-server_name = sys.argv[2]
+# If the user didn't pick a backend and a local LM Studio is up, suggest it.
+_maybe_detect_lmstudio() {
+    if [[ "$BACKEND" == "lmstudio" ]]; then
+        return
+    fi
+    if _lmstudio_running; then
+        info "Detected a running LM Studio at ${SCHOLAR_LMSTUDIO_URL:-http://localhost:1234/v1}"
+        if [[ -z "${OPENAI_API_KEY:-}" || -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            if [[ $ASSUME_YES -eq 1 ]] || _prompt_yes_no "Use LM Studio as the backend? [Y/n] " "y"; then
+                BACKEND="lmstudio"
+            fi
+        fi
+    fi
+}
 
-if not os.path.exists(config_path):
-    sys.exit(0)
+# Interactive prompt. Returns 0 on yes, 1 on no. Non-interactive/pipe -> default.
+_prompt_yes_no() {
+    local prompt="$1"
+    local default="${2:-n}"
+    if [[ ! -t 0 ]] || [[ $ASSUME_YES -eq 1 ]]; then
+        [[ "$default" == "y" ]] && return 0 || return 1
+    fi
+    local reply=""
+    read -r -p "$prompt" reply || reply=""
+    reply="${reply:-$default}"
+    case "${reply,,}" in
+        y|yes) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
-with open(config_path) as f:
-    try:
-        config = json.load(f)
-    except json.JSONDecodeError:
-        sys.exit(0)
-
-if "mcpServers" in config and server_name in config["mcpServers"]:
-    del config["mcpServers"][server_name]
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
-        f.write("\n")
-    print(f"Removed {server_name}")
-else:
-    print(f"{server_name} not found")
-PYEOF
+# Offer LM Studio fallback when cloud keys are missing.
+_offer_lmstudio_fallback() {
+    warn "No cloud API keys found."
+    if _lmstudio_running; then
+        info "LM Studio IS running locally — we can switch to it instead."
+        _prompt_yes_no "Use LM Studio instead of cloud? [Y/n] " "y"
+    else
+        info "Start LM Studio and load two models (one strong, one cheap), or set cloud keys."
+        _prompt_yes_no "Use LM Studio anyway (assuming you'll start it before first use)? [y/N] " "n"
+    fi
 }
 
 # --- Uninstall ---
@@ -104,20 +87,11 @@ do_uninstall() {
     info "Uninstalling ScholarAgent MCP server..."
     echo
 
-    local found=0
-    for i in "${!AGENT_NAMES[@]}"; do
-        local agent="${AGENT_NAMES[$i]}"
-        local config_path="${AGENT_PATHS[$i]}"
-        if [[ -f "$config_path" ]]; then
-            info "Checking ${agent}..."
-            _json_remove_mcp "$config_path"
-            ok "Cleaned ${agent} config"
-            found=1
-        fi
-    done
-
-    if [[ $found -eq 0 ]]; then
-        warn "No agent configs found to clean."
+    if [[ -x "${VENV_DIR}/bin/scholaragent-install" ]]; then
+        "${VENV_DIR}/bin/scholaragent-install" --uninstall
+    else
+        err "No venv found at ${VENV_DIR}. Run ./install.sh first, or remove MCP entries manually."
+        exit 1
     fi
 
     echo
@@ -174,119 +148,129 @@ do_install() {
     fi
     ok "scholaragent-server command ready"
 
-    # Step 5: Validate env vars
+    # Step 5: Validate env vars (or detect local LM Studio)
     echo
-    info "Checking API keys..."
+    _maybe_detect_lmstudio
 
-    local missing_required=0
-    if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-        err "OPENAI_API_KEY not set (required for embeddings)"
-        missing_required=1
+    if [[ "$BACKEND" == "lmstudio" ]]; then
+        info "Backend: lmstudio (local models, no cloud API keys needed)"
+        if [[ -z "${OPENAI_API_KEY:-}" && "${SCHOLAR_EMBEDDING_BACKEND:-}" != "lmstudio" ]]; then
+            warn "OPENAI_API_KEY not set — embeddings will fall back to LM Studio"
+            warn "If you want OpenAI embeddings instead, set OPENAI_API_KEY before re-running."
+            warn "To fully run local, also export:"
+            echo "  export SCHOLAR_EMBEDDING_BACKEND=lmstudio"
+            echo "  export SCHOLAR_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5"
+        fi
     else
-        ok "OPENAI_API_KEY found"
+        info "Checking API keys..."
+        local missing_required=0
+        if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+            err "OPENAI_API_KEY not set (required for embeddings)"
+            missing_required=1
+        else
+            ok "OPENAI_API_KEY found"
+        fi
+
+        if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+            err "ANTHROPIC_API_KEY not set (required for research agents)"
+            missing_required=1
+        else
+            ok "ANTHROPIC_API_KEY found"
+        fi
+
+        if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+            warn "GITHUB_TOKEN not set (optional, needed for code search)"
+        else
+            ok "GITHUB_TOKEN found"
+        fi
+
+        if [[ $missing_required -eq 1 ]]; then
+            echo
+            if _offer_lmstudio_fallback; then
+                BACKEND="lmstudio"
+                info "Switching to LM Studio backend."
+            else
+                err "Required API keys missing. Set them in your shell profile:"
+                echo "  export OPENAI_API_KEY='sk-...'"
+                echo "  export ANTHROPIC_API_KEY='sk-ant-...'"
+                echo
+                err "Or re-run with: ./install.sh --backend lmstudio"
+                exit 1
+            fi
+        fi
     fi
 
-    if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-        err "ANTHROPIC_API_KEY not set (required for research agents)"
-        missing_required=1
-    else
-        ok "ANTHROPIC_API_KEY found"
-    fi
-
-    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-        warn "GITHUB_TOKEN not set (optional, needed for code search)"
-    else
-        ok "GITHUB_TOKEN found"
-    fi
-
-    if [[ $missing_required -eq 1 ]]; then
-        echo
-        err "Required API keys missing. Set them in your shell profile:"
-        echo "  export OPENAI_API_KEY='sk-...'"
-        echo "  export ANTHROPIC_API_KEY='sk-ant-...'"
-        echo
-        err "Then re-run: ./install.sh"
-        exit 1
-    fi
-
-    # Step 6: Auto-detect and register MCP server
+    # Step 6: Delegate registration to the Python installer so it can
+    # handle every target (Claude Code / Cursor / Windsurf / VS Code /
+    # LM Studio / Codex / Docker) with the correct config format.
     echo
     info "Registering MCP server in coding agents..."
-
-    local registered=0
-    for i in "${!AGENT_NAMES[@]}"; do
-        local agent="${AGENT_NAMES[$i]}"
-        local config_path="${AGENT_PATHS[$i]}"
-        local config_dir
-        config_dir="$(dirname "$config_path")"
-
-        if [[ -d "$config_dir" ]]; then
-            info "Found ${agent} — registering..."
-            _json_add_mcp "$config_path"
-            ok "Registered in ${agent} (${config_path})"
-            registered=$((registered + 1))
-        fi
-    done
-
-    if [[ $registered -eq 0 ]]; then
-        warn "No coding agents detected."
-        warn "Manually add to your agent's MCP config:"
-        echo
-        echo "  {"
-        echo "    \"mcpServers\": {"
-        echo "      \"scholar-memory\": {"
-        echo "        \"command\": \"${SERVER_CMD}\""
-        echo "      }"
-        echo "    }"
-        echo "  }"
-        echo
+    local py_args=(--backend "$BACKEND")
+    if [[ -n "$STRONG_MODEL" ]]; then
+        py_args+=(--strong-model "$STRONG_MODEL")
     fi
-
-    # Done
-    echo
-    echo "╔══════════════════════════════════════════╗"
-    echo "║          Installation Complete!          ║"
-    echo "╚══════════════════════════════════════════╝"
-    echo
-    ok "Server command: ${SERVER_CMD}"
-    ok "Registered in ${registered} agent(s)"
-    echo
-    info "Restart your coding agent to pick up the new MCP server."
-
-    # Render the tool list from the single source of truth
-    # (scholaragent._manifest.MCP_TOOLS) so this message cannot drift
-    # from the actual MCP surface.
-    local tool_info
-    tool_info=$("${VENV_DIR}/bin/python" -c \
-        "from scholaragent._manifest import MCP_TOOLS; print(f'{len(MCP_TOOLS)} new tools: ' + ', '.join(MCP_TOOLS))" \
-        2>/dev/null || echo "")
-    if [[ -n "$tool_info" ]]; then
-        info "The agent will have ${tool_info}"
-    else
-        info "See the README for the list of available MCP tools."
+    if [[ -n "$CHEAP_MODEL" ]]; then
+        py_args+=(--cheap-model "$CHEAP_MODEL")
     fi
-    echo
+    "${VENV_DIR}/bin/scholaragent-install" "${py_args[@]}"
 }
 
 # --- Main ---
 
-case "${1:-}" in
-    --uninstall)
-        do_uninstall
-        ;;
-    --help|-h)
-        echo "Usage: ./install.sh [--uninstall] [--help]"
-        echo
-        echo "  (no args)    Install and register ScholarAgent MCP server"
-        echo "  --uninstall  Remove MCP server from all detected agents"
-        echo "  --help       Show this message"
-        ;;
-    "")
-        do_install
-        ;;
+ACTION="install"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --uninstall)
+            ACTION="uninstall"; shift ;;
+        --backend)
+            BACKEND="${2:-}"; shift 2 ;;
+        --backend=*)
+            BACKEND="${1#--backend=}"; shift ;;
+        --strong-model)
+            STRONG_MODEL="${2:-}"; shift 2 ;;
+        --strong-model=*)
+            STRONG_MODEL="${1#--strong-model=}"; shift ;;
+        --cheap-model)
+            CHEAP_MODEL="${2:-}"; shift 2 ;;
+        --cheap-model=*)
+            CHEAP_MODEL="${1#--cheap-model=}"; shift ;;
+        --yes|-y)
+            ASSUME_YES=1; shift ;;
+        --help|-h)
+            cat <<USAGE
+Usage: ./install.sh [options]
+
+Install mode (default):
+  (no args)                          Cloud backend (OpenAI + Anthropic)
+  --backend cloud|lmstudio           Choose backend (default: cloud)
+  --strong-model NAME                Override strong/analytical model
+  --cheap-model NAME                 Override cheap/fast model
+  --yes, -y                          Accept interactive prompts (auto-pick LM Studio if detected)
+
+Uninstall mode:
+  --uninstall                        Remove MCP server from all detected agents
+
+Other:
+  --help, -h                         Show this message
+
+If cloud API keys are missing and LM Studio is running locally, the installer
+will offer to use LM Studio instead. Pass --backend lmstudio to skip the prompt.
+USAGE
+            exit 0 ;;
+        *)
+            err "Unknown option: $1"
+            echo "Run: ./install.sh --help"
+            exit 1 ;;
+    esac
+done
+
+case "$ACTION" in
+    uninstall)
+        do_uninstall ;;
+    install)
+        do_install ;;
     *)
-        err "Unknown option: $1"
-        echo "Usage: ./install.sh [--uninstall] [--help]"
+        err "Unknown action: $ACTION"
         exit 1
         ;;
 esac

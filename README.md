@@ -110,19 +110,24 @@ Each JSON/TOML target gets an `mcpServers.scholar-memory` entry pointing at the 
 git clone https://github.com/byBasiliosP/RLM-Agent.git
 cd RLM-Agent
 
+# cloud backend — export your keys first
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."   # required for normal/deep depth
-export GITHUB_TOKEN="ghp_..."            # optional
-
+export GITHUB_TOKEN="ghp_..."           # optional
 ./install.sh
+
+# or, fully local via LM Studio — no keys required
+./install.sh --backend lmstudio
 ```
 
 `install.sh` will:
 1. Check Python ≥ 3.12.
 2. Create `./.venv/` and `pip install -e .` into it.
 3. Verify the `scholaragent-server` entry point exists.
-4. Register the MCP server in every detected coding-agent config.
-5. Print the 9 tools that will be available after restart (read from `scholaragent._manifest.MCP_TOOLS` at install time — cannot drift from the runtime).
+4. Choose a backend:
+   - `--backend lmstudio` skips the cloud-key check entirely.
+   - If cloud keys are missing **and** a local LM Studio is running on `localhost:1234`, the installer offers to switch (`[Y/n]` prompt). Pass `--yes` to auto-accept.
+5. Delegate registration to `scholaragent-install`, which upserts the MCP entry in every detected target (Claude Code / Cursor / Windsurf / VS Code / LM Studio / Codex CLI) and prints the exact `docker mcp server add …` line if Docker Desktop MCP Toolkit is present.
 
 ### Install from source (manual)
 
