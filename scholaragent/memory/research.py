@@ -184,7 +184,7 @@ class ResearchPipeline:
         # Step 4: Index all results
         entries_added = self._indexer.index_enriched(query=query, enriched_results=enriched)
         self._indexer.log_research(query=query, depth="normal", focus=focus, result_count=entries_added)
-        self.store.save_stream(stream)
+        stream.flush()
         return ResearchResult(
             status="completed",
             query=query,

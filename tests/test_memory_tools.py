@@ -2,16 +2,15 @@
 
 import pytest
 
+from scholaragent.clients.base import BaseLM
 from scholaragent.core.agent import SpecialistAgent
 from scholaragent.core.dispatcher import Dispatcher
 from scholaragent.core.handler import LMHandler
 from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.types import AgentResult, ModelUsageSummary, UsageSummary
-from scholaragent.clients.base import BaseLM
 from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.types import MemoryEntry
 from tests.helpers import FakeEmbeddings
-
 
 # ---------------------------------------------------------------------------
 # Test doubles

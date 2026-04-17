@@ -2,9 +2,9 @@
 
 import os
 import tempfile
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock
 
 from scholaragent.memory.research import ResearchPipeline
 

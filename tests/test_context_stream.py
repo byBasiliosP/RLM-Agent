@@ -1,6 +1,5 @@
 """Tests for ContextStream data model, persistence, and agent integration."""
 
-import json
 import pytest
 
 from scholaragent.core.context import ContextStream, PipelineState, StreamEvent
@@ -141,16 +140,50 @@ class TestContextStream:
         stream.push("scout", "papers_found", {"papers": []})
         assert stream.updated_at >= original
 
-    def test_push_with_save_callback(self):
+    def test_push_batches_saves(self):
+        """Pushes batch: save fires every `flush_every` events, not per-push."""
         saved = []
-        stream = ContextStream(query="test", on_save=lambda s: saved.append(s.id))
+        stream = ContextStream(
+            query="test", on_save=lambda s: saved.append(s.id), flush_every=10
+        )
+        for _ in range(9):
+            stream.push("scout", "papers_found", {"papers": []})
+        assert saved == []
         stream.push("scout", "papers_found", {"papers": []})
         assert len(saved) == 1
+
+    def test_flush_saves_pending(self):
+        saved = []
+        stream = ContextStream(
+            query="test", on_save=lambda s: saved.append(s.id), flush_every=10
+        )
+        stream.push("scout", "papers_found", {"papers": []})
+        assert saved == []
+        stream.flush()
+        assert len(saved) == 1
+
+    def test_flush_noop_when_clean(self):
+        saved = []
+        stream = ContextStream(
+            query="test", on_save=lambda s: saved.append(s.id), flush_every=10
+        )
+        stream.flush()
+        assert saved == []
 
     def test_commit_with_save_callback(self):
         saved = []
         stream = ContextStream(query="test", on_save=lambda s: saved.append(s.id))
         stream.commit("scout", [])
+        assert len(saved) == 1
+
+    def test_commit_flushes_pending_pushes(self):
+        saved = []
+        stream = ContextStream(
+            query="test", on_save=lambda s: saved.append(s.id), flush_every=10
+        )
+        stream.push("scout", "papers_found", {"papers": []})
+        stream.commit("scout", [])
+        # commit should save exactly once, covering the pending push
         assert len(saved) == 1
 
 
@@ -230,11 +263,12 @@ class TestMemoryStoreStreams:
         assert results[0]["query"] == "second"
 
 
-from unittest.mock import MagicMock, patch
-from scholaragent.core.types import AgentResult, ModelUsageSummary, UsageSummary
+from unittest.mock import patch
+
 from scholaragent.clients.base import BaseLM
 from scholaragent.core.agent import SpecialistAgent
 from scholaragent.core.handler import LMHandler
+from scholaragent.core.types import ModelUsageSummary, UsageSummary
 
 
 class FakeLM(BaseLM):

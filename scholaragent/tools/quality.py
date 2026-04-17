@@ -5,6 +5,37 @@ import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
+from scholaragent.config import ScholarConfig
+
+
+def _safe_project_path(project_path: str) -> Path:
+    """Resolve and validate a user-supplied project path.
+
+    Rejects paths that don't exist or aren't directories. If
+    ScholarConfig.project_root is set (via SCHOLAR_PROJECT_ROOT), also
+    rejects paths outside that root.
+
+    Raises:
+        ValueError: if the path is invalid or outside the allowed root.
+    """
+    if not isinstance(project_path, str) or not project_path.strip():
+        raise ValueError("project_path must be a non-empty string")
+    resolved = Path(project_path).expanduser().resolve()
+    if not resolved.exists():
+        raise ValueError(f"project_path does not exist: {project_path}")
+    if not resolved.is_dir():
+        raise ValueError(f"project_path is not a directory: {project_path}")
+    root_str = ScholarConfig.from_env().project_root
+    if root_str:
+        root = Path(root_str).expanduser().resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as e:
+            raise ValueError(
+                f"project_path {resolved} is outside allowed root {root}"
+            ) from e
+    return resolved
+
 
 # Files that indicate a specific language/framework
 _BUILD_FILES = {
@@ -32,7 +63,7 @@ _TEST_CONFIGS = frozenset({
 
 def detect_framework(project_path: str) -> dict:
     """Detect the language/framework of a project by scanning for build files."""
-    path = Path(project_path)
+    path = _safe_project_path(project_path)
     language = "unknown"
     build_file = ""
     linter_configs: list[str] = []
@@ -94,39 +125,41 @@ def run_tool_or_fallback(
 
 def run_linter(project_path: str, language: str = "") -> str:
     """Run language-appropriate linters. Returns combined stdout or raises."""
+    path = _safe_project_path(project_path)
+    cwd = str(path)
     if not language:
-        info = detect_framework(project_path)
+        info = detect_framework(cwd)
         language = info["language"]
 
     outputs = []
     if language == "python":
         for cmd in [
-            ["python", "-m", "pylint", "--score=no", "--output-format=text", project_path],
-            ["python", "-m", "mypy", project_path, "--no-error-summary"],
+            ["python", "-m", "pylint", "--score=no", "--output-format=text", cwd],
+            ["python", "-m", "mypy", cwd, "--no-error-summary"],
         ]:
             try:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=project_path)
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=cwd)
                 outputs.append(r.stdout or r.stderr)
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 pass
     elif language in ("javascript", "typescript"):
         try:
             r = subprocess.run(["npx", "eslint", ".", "--format=compact"],
-                               capture_output=True, text=True, timeout=30, cwd=project_path)
+                               capture_output=True, text=True, timeout=30, cwd=cwd)
             outputs.append(r.stdout or r.stderr)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
     elif language == "rust":
         try:
             r = subprocess.run(["cargo", "clippy", "--message-format=short"],
-                               capture_output=True, text=True, timeout=60, cwd=project_path)
+                               capture_output=True, text=True, timeout=60, cwd=cwd)
             outputs.append(r.stdout or r.stderr)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
     elif language == "go":
         try:
             r = subprocess.run(["golangci-lint", "run", "--out-format=line-number"],
-                               capture_output=True, text=True, timeout=30, cwd=project_path)
+                               capture_output=True, text=True, timeout=30, cwd=cwd)
             outputs.append(r.stdout or r.stderr)
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
@@ -138,25 +171,27 @@ def run_linter(project_path: str, language: str = "") -> str:
 
 def discover_tests(project_path: str, language: str = "") -> str:
     """Discover test files/cases using framework tools. Returns stdout or raises."""
+    path = _safe_project_path(project_path)
+    cwd = str(path)
     if not language:
-        info = detect_framework(project_path)
+        info = detect_framework(cwd)
         language = info["language"]
 
     if language == "python":
         r = subprocess.run(["python", "-m", "pytest", "--collect-only", "-q"],
-                           capture_output=True, text=True, timeout=30, cwd=project_path)
+                           capture_output=True, text=True, timeout=30, cwd=cwd)
         if r.returncode == 0 or r.stdout.strip():
             return r.stdout
         raise FileNotFoundError("pytest not available")
     elif language in ("javascript", "typescript"):
         r = subprocess.run(["npx", "jest", "--listTests"],
-                           capture_output=True, text=True, timeout=30, cwd=project_path)
+                           capture_output=True, text=True, timeout=30, cwd=cwd)
         if r.returncode == 0 or r.stdout.strip():
             return r.stdout
         raise FileNotFoundError("jest not available")
     elif language == "rust":
         r = subprocess.run(["cargo", "test", "--", "--list"],
-                           capture_output=True, text=True, timeout=30, cwd=project_path)
+                           capture_output=True, text=True, timeout=30, cwd=cwd)
         if r.returncode == 0 or r.stdout.strip():
             return r.stdout
         raise FileNotFoundError("cargo test not available")

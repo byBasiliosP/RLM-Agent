@@ -1,12 +1,13 @@
 """Tests for LLM client abstraction and model router."""
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from scholaragent.clients.anthropic_client import AnthropicClient
 from scholaragent.clients.base import BaseLM
 from scholaragent.clients.openai_client import OpenAIClient
-from scholaragent.clients.anthropic_client import AnthropicClient
-from scholaragent.clients.router import ModelConfig, ModelRouter, CHEAP_ROLES
+from scholaragent.clients.router import CHEAP_ROLES, ModelConfig, ModelRouter
 from scholaragent.core.types import ModelUsageSummary, UsageSummary
 
 

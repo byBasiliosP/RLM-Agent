@@ -9,7 +9,6 @@ from scholaragent.core.handler import LMHandler
 from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.types import AgentResult, ModelUsageSummary, UsageSummary
 
-
 # ---------------------------------------------------------------------------
 # Test doubles
 # ---------------------------------------------------------------------------
@@ -168,7 +167,7 @@ class TestDispatchAgent:
     def test_dispatch_returns_result_string_on_success(self, dispatcher):
         result = dispatcher._dispatch_agent("echo", "some task")
         assert isinstance(result, str)
-        assert "echo: some task" == result
+        assert result == "echo: some task"
 
     def test_dispatch_returns_error_on_failure(self, handler):
         reg = AgentRegistry()

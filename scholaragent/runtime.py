@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 logger = logging.getLogger(__name__)
 
 from scholaragent.memory.embeddings import EmbeddingBackend, OpenAIEmbeddings
-from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.research import ResearchPipeline
+from scholaragent.memory.store import MemoryStore
 
 if TYPE_CHECKING:
     from scholaragent.clients.token_counter import TokenCounter
@@ -83,14 +83,17 @@ class RuntimeContainer:
 
             from scholaragent.agents.analyst import AnalystAgent
             from scholaragent.agents.critic import CriticAgent
+            from scholaragent.agents.linter import LinterAgent
             from scholaragent.agents.reader import ReaderAgent
             from scholaragent.agents.scout import ScoutAgent
             from scholaragent.agents.synthesizer import SynthesizerAgent
             from scholaragent.clients.router import ModelConfig, ModelRouter
             from scholaragent.clients.token_counter import TokenCounter
+            from scholaragent.config import ScholarConfig
             from scholaragent.core.dispatcher import Dispatcher
             from scholaragent.core.handler import LMHandler
             from scholaragent.core.registry import AgentRegistry
+            from scholaragent.utils.cache import LLMCache
 
             router = ModelRouter(
                 strong=ModelConfig(**self._model_config["strong"]),
@@ -98,8 +101,14 @@ class RuntimeContainer:
             )
             token_counter = TokenCounter()
             strong_client = router.get_client("dispatcher")
+            cache = None
+            if not ScholarConfig.from_env().llm_cache_disable:
+                try:
+                    cache = LLMCache(cache_dir=self.data_dir / "llm_cache")
+                except OSError:
+                    logger.warning("Failed to initialize LLM cache; continuing without it")
             handler = LMHandler(
-                client=strong_client, token_counter=token_counter, verbose=False
+                client=strong_client, token_counter=token_counter, cache=cache, verbose=False
             )
             cheap_client = router.get_client("scout")
             handler.register_client(cheap_client.model_name, cheap_client)
@@ -108,7 +117,7 @@ class RuntimeContainer:
             registry = AgentRegistry()
             for agent in (
                 ScoutAgent(), ReaderAgent(), CriticAgent(),
-                AnalystAgent(), SynthesizerAgent(),
+                AnalystAgent(), SynthesizerAgent(), LinterAgent(),
             ):
                 registry.register(agent)
 

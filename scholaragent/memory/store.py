@@ -5,8 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from scholaragent.memory.embeddings import EmbeddingBackend, cosine_similarity
@@ -23,10 +22,23 @@ class MemoryStore:
         self.db_path = db_path
         self.embeddings = embeddings
         self._lock = threading.Lock()
+        self._closed = False
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.row_factory = sqlite3.Row
         self._create_tables()
+
+    def __enter__(self) -> MemoryStore:
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _create_tables(self) -> None:
         with self._lock:
@@ -86,6 +98,43 @@ class MemoryStore:
                     entry.created_at,
                     entry.access_count,
                 ),
+            )
+            self._conn.commit()
+
+    def add_many(self, entries: list[MemoryEntry]) -> None:
+        """Add multiple entries efficiently.
+
+        Embeds all entries missing embeddings in a single batch call, then
+        writes everything in one transaction. Safe to call with an empty
+        list.
+        """
+        if not entries:
+            return
+        needing = [e for e in entries if not e.embedding]
+        if needing:
+            vectors = self.embeddings.embed_batch([e.content for e in needing])
+            for entry, vec in zip(needing, vectors, strict=True):
+                entry.embedding = vec
+        rows = [
+            (
+                e.id,
+                e.content,
+                e.summary,
+                e.source_type,
+                e.source_ref,
+                json.dumps(e.tags),
+                json.dumps(e.embedding),
+                e.created_at,
+                e.access_count,
+            )
+            for e in entries
+        ]
+        with self._lock:
+            self._conn.executemany(
+                """INSERT OR REPLACE INTO entries
+                   (id, content, summary, source_type, source_ref, tags, embedding, created_at, access_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                rows,
             )
             self._conn.commit()
 
@@ -207,7 +256,7 @@ class MemoryStore:
     ) -> list[ResearchLogEntry]:
         """Find recent research log entries matching query text."""
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(days=days)
+            datetime.now(UTC) - timedelta(days=days)
         ).isoformat()
         with self._lock:
             rows = self._conn.execute(
@@ -321,8 +370,11 @@ class MemoryStore:
         return results
 
     def close(self) -> None:
-        """Close the database connection."""
+        """Close the database connection. Idempotent."""
         with self._lock:
+            if self._closed:
+                return
+            self._closed = True
             self._conn.close()
 
     def _row_to_entry(self, row: sqlite3.Row) -> MemoryEntry:

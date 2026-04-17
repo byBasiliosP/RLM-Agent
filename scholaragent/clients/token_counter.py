@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -95,7 +95,7 @@ class TokenCounter:
                 f"= {m['total_tokens']} total, {cost_str}"
             )
         t = s["total"]
-        lines.append(f"  ────────────────────────")
+        lines.append("  ────────────────────────")
         lines.append(
             f"  TOTAL: {t['calls']} calls, {t['total_tokens']} tokens, "
             f"${costs['total_cost_usd']:.4f}"

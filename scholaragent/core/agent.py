@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from scholaragent.core.handler import LMHandler
 from scholaragent.core.types import AgentResult
@@ -19,9 +19,9 @@ from scholaragent.environments.local_repl import LocalREPL
 from scholaragent.utils.parsing import find_code_blocks, find_final_answer, format_iteration_output
 
 if TYPE_CHECKING:
-    from scholaragent.utils.budget import Budget
-    from scholaragent.memory.store import MemoryStore
     from scholaragent.core.context import ContextStream
+    from scholaragent.memory.store import MemoryStore
+    from scholaragent.utils.budget import Budget
 
 
 class SpecialistAgent(ABC):

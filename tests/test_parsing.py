@@ -1,15 +1,13 @@
 """Tests for parsing utilities and budget tracking."""
 
-import pytest
 
 from scholaragent.core.types import CodeBlock
+from scholaragent.utils.budget import Budget
 from scholaragent.utils.parsing import (
     find_code_blocks,
     find_final_answer,
     format_iteration_output,
 )
-from scholaragent.utils.budget import Budget
-
 
 # ---------------------------------------------------------------------------
 # find_code_blocks

@@ -2,8 +2,8 @@
 
 import pytest
 
-from scholaragent.utils.cost import PRICING, estimate_cost
 from scholaragent.clients.token_counter import TokenCounter
+from scholaragent.utils.cost import PRICING, estimate_cost
 
 
 class TestCostEstimation:

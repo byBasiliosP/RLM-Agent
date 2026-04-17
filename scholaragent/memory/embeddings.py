@@ -1,7 +1,7 @@
 """Embedding backends for semantic search."""
-from abc import ABC, abstractmethod
 import hashlib
 import os
+from abc import ABC, abstractmethod
 
 import numpy as np
 import openai

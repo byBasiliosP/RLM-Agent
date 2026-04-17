@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,extraction,web]"
+
+      - name: Ruff lint
+        run: ruff check .
+
+      # Format check intentionally omitted for now -- adopt gradually via the
+      # pre-commit hook as files are edited, to avoid a mass-reformat commit
+      # tangled with unrelated changes.
+
+      - name: Run tests
+        run: pytest -q --ignore=tests/test_web_tools_live.py --ignore=tests/test_installer.py

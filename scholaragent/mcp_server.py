@@ -29,49 +29,51 @@ Model backend configuration via environment variables:
 import atexit
 import json
 import logging
-import os
 import threading
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 from mcp.server.fastmcp import FastMCP
 
-from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.research import ResearchPipeline
+from scholaragent.memory.store import MemoryStore
 
 # --- Validation constants ---
 
 VALID_DEPTHS = frozenset({"quick", "normal", "deep"})
 VALID_FOCUSES = frozenset({"implementation", "theory", "comparison"})
+VALID_SOURCE_TYPES = frozenset({"paper", "code", "docs", "synthesized_report"})
+
+# Input length limits (characters)
+MAX_QUERY_LEN = 2000
+MAX_ID_LEN = 256
+MAX_TAGS = 20
+MAX_TAG_LEN = 64
+MAX_CONTENT_LEN = 200_000
+
+
+def _validate_text(name: str, value: str, max_len: int, allow_empty: bool = False) -> str | None:
+    """Return an error string if invalid, else None."""
+    if not isinstance(value, str):
+        return f"{name} must be a string"
+    stripped = value.strip()
+    if not allow_empty and not stripped:
+        return f"{name} must be non-empty"
+    if len(value) > max_len:
+        return f"{name} exceeds max length of {max_len} characters"
+    return None
 
 # --- Runtime container (replaces former module-level globals) ---
 
 _container = None  # RuntimeContainer, lazy-init
 _container_lock = threading.Lock()
 
-DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
-DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
-
 
 def _build_model_config() -> dict:
     """Build strong/cheap model config dicts from environment variables."""
-    lmstudio_url = os.environ.get("SCHOLAR_LMSTUDIO_URL", "http://localhost:1234/v1")
+    from scholaragent.config import ScholarConfig
 
-    strong_backend = os.environ.get("SCHOLAR_STRONG_BACKEND", "anthropic")
-    strong_model = os.environ.get("SCHOLAR_STRONG_MODEL", "claude-sonnet-4-6")
-    cheap_backend = os.environ.get("SCHOLAR_CHEAP_BACKEND", "openai")
-    cheap_model = os.environ.get("SCHOLAR_CHEAP_MODEL", "gpt-4o-mini")
-
-    strong = {"backend": strong_backend, "model_name": strong_model}
-    cheap = {"backend": cheap_backend, "model_name": cheap_model}
-
-    if strong_backend == "lmstudio":
-        strong["base_url"] = lmstudio_url
-    if cheap_backend == "lmstudio":
-        cheap["base_url"] = lmstudio_url
-
-    return {"strong": strong, "cheap": cheap}
+    return ScholarConfig.from_env().model_config_dict()
 
 
 def _get_container():
@@ -82,11 +84,14 @@ def _get_container():
     with _container_lock:
         if _container is not None:
             return _container
+        from scholaragent.config import ScholarConfig
         from scholaragent.runtime import RuntimeContainer
+
+        cfg = ScholarConfig.from_env()
         _container = RuntimeContainer(
-            data_dir=DATA_DIR,
-            db_path=DB_PATH,
-            model_config=_build_model_config(),
+            data_dir=cfg.data_dir,
+            db_path=cfg.db_path,
+            model_config=cfg.model_config_dict(),
         )
         atexit.register(_container.close)
         return _container
@@ -118,8 +123,16 @@ def _memory_lookup(
     max_results: int = 5,
     compact: bool = True,
 ) -> dict:
+    if err := _validate_text("query", query, MAX_QUERY_LEN):
+        return {"error": err}
     if not 1 <= max_results <= 50:
         return {"error": "max_results must be between 1 and 50"}
+    if sources is not None:
+        if not isinstance(sources, list) or not all(isinstance(s, str) for s in sources):
+            return {"error": "sources must be a list of strings"}
+        invalid = [s for s in sources if s not in VALID_SOURCE_TYPES]
+        if invalid:
+            return {"error": f"invalid source types: {invalid}. Allowed: {sorted(VALID_SOURCE_TYPES)}"}
     results = store.search(query, max_results=max_results, sources=sources)
     return {
         "results": [
@@ -140,6 +153,8 @@ def _memory_research(
     depth: str = "normal",
     focus: str = "implementation",
 ) -> dict:
+    if err := _validate_text("query", query, MAX_QUERY_LEN):
+        return {"error": err}
     if depth not in VALID_DEPTHS:
         return {"error": f"depth must be one of {sorted(VALID_DEPTHS)}"}
     if focus not in VALID_FOCUSES:
@@ -160,8 +175,16 @@ def _memory_store(
     source: str,
     tags: list[str],
 ) -> dict:
-    if not content or not content.strip():
-        return {"error": "content must be non-empty"}
+    if err := _validate_text("content", content, MAX_CONTENT_LEN):
+        return {"error": err}
+    if err := _validate_text("source", source, MAX_ID_LEN):
+        return {"error": err}
+    if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
+        return {"error": "tags must be a list of strings"}
+    if len(tags) > MAX_TAGS:
+        return {"error": f"tags exceeds max of {MAX_TAGS} items"}
+    if any(len(t) > MAX_TAG_LEN for t in tags):
+        return {"error": f"each tag must be at most {MAX_TAG_LEN} characters"}
     from scholaragent.memory.types import MemoryEntry
 
     # Infer source_type from source string
@@ -183,6 +206,8 @@ def _memory_store(
 
 
 def _memory_get(store: MemoryStore, entry_id: str) -> dict:
+    if err := _validate_text("entry_id", entry_id, MAX_ID_LEN):
+        return {"error": err}
     entry = store.get(entry_id)
     if entry is None:
         return {"error": f"No entry found with id: {entry_id}"}
@@ -193,6 +218,8 @@ def _memory_forget(
     store: MemoryStore,
     query_or_id: str,
 ) -> dict:
+    if err := _validate_text("query_or_id", query_or_id, MAX_QUERY_LEN):
+        return {"error": err}
     deleted = store.forget(query_or_id)
     return {"deleted": deleted, "query_or_id": query_or_id}
 
@@ -213,6 +240,10 @@ def _memory_stream_list(
 ) -> dict:
     if not 1 <= limit <= 50:
         return {"error": "limit must be between 1 and 50"}
+    if query is not None:
+        if err := _validate_text("query", query, MAX_QUERY_LEN, allow_empty=True):
+            return {"error": err}
+        query = query.strip() or None
     streams = store.list_streams(query=query, limit=limit)
     return {"streams": streams}
 
@@ -222,6 +253,11 @@ def _memory_stream_get(
     stream_id: str,
     agent: str | None = None,
 ) -> dict:
+    if err := _validate_text("stream_id", stream_id, MAX_ID_LEN):
+        return {"error": err}
+    if agent is not None:
+        if err := _validate_text("agent", agent, MAX_ID_LEN):
+            return {"error": err}
     stream = store.load_stream(stream_id)
     if stream is None:
         return {"error": f"No stream found with id: {stream_id}"}

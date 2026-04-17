@@ -11,12 +11,30 @@ import logging
 import re
 from collections.abc import Sequence
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
+from scholaragent.sources.docs import search_docs
+from scholaragent.sources.github import search_github_code
 from scholaragent.tools.arxiv import search_arxiv
 from scholaragent.tools.semantic_scholar import search_semantic_scholar
-from scholaragent.sources.github import search_github_code
-from scholaragent.sources.docs import search_docs
+
+# Expected network/parse failures; other exceptions are logged with full
+# traceback (see _log_source_error) so programming errors still surface.
+_EXPECTED_SOURCE_ERRORS: tuple[type[BaseException], ...] = (
+    httpx.HTTPError,
+    json.JSONDecodeError,
+    OSError,
+    ValueError,
+)
+
+
+def _log_source_error(source: str, e: Exception) -> None:
+    if isinstance(e, _EXPECTED_SOURCE_ERRORS):
+        logger.warning("%s search failed: %s", source, e)
+    else:
+        logger.exception("Unexpected %s error", source)
 
 
 class SourceCollector:
@@ -47,14 +65,14 @@ class SourceCollector:
             try:
                 results.extend(search_github_code(query, language=language, max_results=5))
             except Exception as e:
-                logger.warning("GitHub search failed: %s", e)
+                _log_source_error("GitHub", e)
                 errors.append(f"GitHub: {type(e).__name__}: {e}")
 
         if "docs" in source_types:
             try:
                 results.extend(search_docs(query, max_results=3))
             except Exception as e:
-                logger.warning("Docs search failed: %s", e)
+                _log_source_error("Docs", e)
                 errors.append(f"Docs: {type(e).__name__}: {e}")
 
         return results, errors
@@ -74,7 +92,7 @@ class SourceCollector:
                         "source_ref": f"arxiv:{p.get('arxiv_id', '')}",
                     })
         except Exception as e:
-            logger.warning("arXiv search failed: %s", e)
+            _log_source_error("arXiv", e)
             errors.append(f"arXiv: {type(e).__name__}: {e}")
 
     def _collect_s2(self, query: str, results: list[dict], errors: list[str]) -> None:
@@ -93,7 +111,7 @@ class SourceCollector:
                         "source_ref": f"s2:{p.get('paper_id', '')}",
                     })
         except Exception as e:
-            logger.warning("S2 search failed: %s", e)
+            _log_source_error("Semantic Scholar", e)
             errors.append(f"Semantic Scholar: {type(e).__name__}: {e}")
 
     def deduplicate(self, results: list[dict]) -> list[dict]:

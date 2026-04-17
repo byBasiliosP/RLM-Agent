@@ -11,8 +11,17 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+
+
+def _default_flush_every() -> int:
+    """Number of pushes between automatic saves (from ScholarConfig)."""
+    from scholaragent.config import ScholarConfig
+
+    try:
+        return ScholarConfig.from_env().context_flush_every
+    except ValueError:
+        return 10
 
 
 @dataclass
@@ -57,7 +66,7 @@ class StreamEvent:
     agent: str
     event_type: str
     data: dict
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict:
         return {
@@ -73,7 +82,7 @@ class StreamEvent:
             agent=d["agent"],
             event_type=d["event_type"],
             data=d["data"],
-            timestamp=d.get("timestamp", datetime.now(timezone.utc).isoformat()),
+            timestamp=d.get("timestamp", datetime.now(UTC).isoformat()),
         )
 
 
@@ -136,33 +145,52 @@ class ContextStream:
 
     query: str
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     state: PipelineState = field(default_factory=PipelineState)
     traces: dict[str, list[dict]] = field(default_factory=dict)
     events: list[StreamEvent] = field(default_factory=list)
     on_save: Callable[[ContextStream], None] | None = field(default=None, repr=False)
+    flush_every: int = field(default_factory=_default_flush_every, repr=False)
+    _pending_pushes: int = field(default=0, repr=False)
 
     def push(self, agent: str, event_type: str, data: dict) -> None:
-        """Record an incremental update from an agent mid-execution."""
+        """Record an incremental update from an agent mid-execution.
+
+        Saves to `on_save` only every `flush_every` pushes to avoid a DB
+        write on every event. Callers that need guaranteed durability
+        should call `flush()` at commit/shutdown points.
+        """
         event = StreamEvent(agent=agent, event_type=event_type, data=data)
         self.events.append(event)
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
         updater = _STATE_UPDATERS.get(event_type)
         if updater is not None:
             updater(self.state, data)
 
-        if self.on_save is not None:
+        self._pending_pushes += 1
+        if self.on_save is not None and self._pending_pushes >= self.flush_every:
             self.on_save(self)
+            self._pending_pushes = 0
 
     def commit(self, agent: str, messages: list[dict]) -> None:
-        """Save an agent's conversation trace as a final snapshot."""
+        """Save an agent's conversation trace as a final snapshot.
+
+        Always flushes pending pushes along with the trace update.
+        """
         self.traces[agent] = messages
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
         if self.on_save is not None:
             self.on_save(self)
+            self._pending_pushes = 0
+
+    def flush(self) -> None:
+        """Force-save any pending pushes. No-op if clean or no callback."""
+        if self.on_save is not None and self._pending_pushes > 0:
+            self.on_save(self)
+            self._pending_pushes = 0
 
     def read(self, agent: str | None = None) -> dict:
         """Read stream data, optionally filtered to a single agent."""

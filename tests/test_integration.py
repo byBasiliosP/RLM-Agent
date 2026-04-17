@@ -1,10 +1,9 @@
 """Integration test: full flow from MCP tool functions through to store."""
 
-import os
-import tempfile
+
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 
 
 class FakeEmbeddings:
@@ -29,8 +28,8 @@ class TestFullFlow:
         self.db_path = str(tmp_path / "integration.db")
 
     def test_store_then_lookup(self):
+        from scholaragent.mcp_server import _memory_lookup, _memory_store
         from scholaragent.memory.store import MemoryStore
-        from scholaragent.mcp_server import _memory_store, _memory_lookup
 
         store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
 
@@ -48,8 +47,8 @@ class TestFullFlow:
         assert len(rlhf_results) > 0
 
     def test_store_then_forget(self):
+        from scholaragent.mcp_server import _memory_forget, _memory_status, _memory_store
         from scholaragent.memory.store import MemoryStore
-        from scholaragent.mcp_server import _memory_store, _memory_forget, _memory_status
 
         store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
 
@@ -66,9 +65,9 @@ class TestFullFlow:
         assert status["total_entries"] == 0
 
     def test_research_then_lookup(self):
-        from scholaragent.memory.store import MemoryStore
+        from scholaragent.mcp_server import _memory_lookup, _memory_research
         from scholaragent.memory.research import ResearchPipeline
-        from scholaragent.mcp_server import _memory_research, _memory_lookup
+        from scholaragent.memory.store import MemoryStore
 
         store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
         pipeline = ResearchPipeline(store=store)

@@ -2,12 +2,9 @@
 
 import os
 import tempfile
-
-import pytest
 from unittest.mock import MagicMock
 
-
-from scholaragent.memory.types import MemoryEntry
+import pytest
 
 
 class FakeEmbeddings:
@@ -151,8 +148,8 @@ class TestPipelineDependencyInjection:
         fake_collector.deduplicate.assert_called_once()
 
     def test_pipeline_uses_injected_indexer(self, store):
-        from scholaragent.memory.research import ResearchPipeline
         from scholaragent.memory.indexer import ResultIndexer
+        from scholaragent.memory.research import ResearchPipeline
 
         real_indexer = ResultIndexer(store)
         pipeline = ResearchPipeline(

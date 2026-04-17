@@ -2,12 +2,12 @@
 
 import os
 import tempfile
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock, call
 
-from scholaragent.memory.research import ResearchPipeline, FOCUS_HINTS
 from scholaragent.core.types import AgentResult
+from scholaragent.memory.research import FOCUS_HINTS, ResearchPipeline
 
 
 class FakeEmbeddings:

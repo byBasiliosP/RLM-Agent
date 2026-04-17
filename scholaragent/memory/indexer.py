@@ -18,24 +18,28 @@ class ResultIndexer:
 
     def index_raw(self, query: str, raw_results: list[dict]) -> int:
         """Index raw source results. Returns number of entries added."""
-        added = 0
+        if not raw_results:
+            return 0
         tag = query.lower().replace(" ", "-")
-        for raw in raw_results:
-            entry = MemoryEntry(
+        entries = [
+            MemoryEntry(
                 content=raw["content"],
                 summary=MemoryEntry.smart_summary(raw["content"]),
                 source_type=raw["source_type"],
                 source_ref=raw["source_ref"],
                 tags=[tag],
             )
-            self._store.add(entry)
-            added += 1
-        return added
+            for raw in raw_results
+        ]
+        self._store.add_many(entries)
+        return len(entries)
 
     def index_enriched(self, query: str, enriched_results: list[dict]) -> int:
         """Index agent-enriched results with reader/critic output concatenated."""
-        added = 0
+        if not enriched_results:
+            return 0
         tag = query.lower().replace(" ", "-")
+        entries = []
         for item in enriched_results:
             content = item["content"]
             if item.get("reader_findings"):
@@ -47,16 +51,15 @@ class ResultIndexer:
             if item.get("reader_findings") or item.get("critic_assessment"):
                 tags.append("agent-processed")
 
-            entry = MemoryEntry(
+            entries.append(MemoryEntry(
                 content=content,
                 summary=MemoryEntry.smart_summary(content),
                 source_type=item["source_type"],
                 source_ref=item["source_ref"],
                 tags=tags,
-            )
-            self._store.add(entry)
-            added += 1
-        return added
+            ))
+        self._store.add_many(entries)
+        return len(entries)
 
     def index_synthesis(self, query: str, synthesis_text: str) -> int:
         """Index a deep-pipeline synthesized report. Returns 1 or 0."""

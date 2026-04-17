@@ -1,8 +1,6 @@
 """Tests for documentation and GitHub code source adapters."""
 
-import json
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 
@@ -172,7 +170,7 @@ class TestFetchDocsEdgeCases:
     @patch("scholaragent.sources.docs._http_client")
     def test_truncates_long_content(self, mock_client):
         """Content should be truncated to MAX_DOC_CONTENT_LENGTH."""
-        from scholaragent.sources.docs import fetch_docs, MAX_DOC_CONTENT_LENGTH
+        from scholaragent.sources.docs import MAX_DOC_CONTENT_LENGTH, fetch_docs
 
         long_html = "<p>" + "a" * 20_000 + "</p>"
         mock_response = MagicMock()

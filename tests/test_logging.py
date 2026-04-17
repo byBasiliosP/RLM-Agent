@@ -5,7 +5,6 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import httpx
-import pytest
 
 from tests.helpers import FakeEmbeddings
 
@@ -65,8 +64,8 @@ class TestStructuredLogging:
     def test_research_pipeline_logs_source_errors(self, tmp_path, monkeypatch):
         """ResearchPipeline should log warnings for failed sources."""
         import scholaragent.memory.source_collector as sc_mod
-        from scholaragent.memory.store import MemoryStore
         from scholaragent.memory.research import ResearchPipeline
+        from scholaragent.memory.store import MemoryStore
 
         monkeypatch.setattr(sc_mod, "search_arxiv", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("arxiv down")))
         monkeypatch.setattr(sc_mod, "search_semantic_scholar", lambda *a, **kw: "[]")

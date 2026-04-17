@@ -2,10 +2,7 @@
 
 import json
 import sys
-import time
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 def _make_mock_pypdf(mock_reader):
