@@ -92,7 +92,17 @@ pip install scholaragent
 scholaragent-install
 ```
 
-The installer auto-detects Claude Code, Cursor, Windsurf, and VS Code configs at `~/.claude/settings.json`, `~/.cursor/mcp.json`, `~/.windsurf/mcp.json`, `~/.vscode/mcp.json`, and adds an `mcpServers.scholar-memory` entry pointing at the `scholaragent-server` binary.
+The installer auto-detects:
+
+- **Claude Code** — `~/.claude/settings.json`
+- **Cursor** — `~/.cursor/mcp.json`
+- **Windsurf** — `~/.windsurf/mcp.json`
+- **VS Code** — `~/.vscode/mcp.json`
+- **LM Studio** — `~/.lmstudio/mcp.json` (same JSON shape as above). Also detects a running LM Studio at `http://localhost:1234` and suggests `--backend lmstudio`.
+- **Codex CLI** — `~/.codex/config.toml` (TOML; upserts `[mcp_servers.scholar-memory]` without touching other sections).
+- **Docker Desktop MCP Toolkit** — if `~/.docker/mcp/` exists, the installer prints the exact `docker mcp server add …` command to run (Docker manages its MCP registry via CLI, not a static file).
+
+Each JSON/TOML target gets an `mcpServers.scholar-memory` entry pointing at the `scholaragent-server` binary.
 
 ### Install from source (bash installer)
 
