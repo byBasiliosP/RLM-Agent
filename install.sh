@@ -9,7 +9,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.venv"
 SERVER_CMD="${VENV_DIR}/bin/scholaragent-server"
-MCP_SERVER_NAME="scholar-memory"
 
 BACKEND="cloud"
 STRONG_MODEL=""
