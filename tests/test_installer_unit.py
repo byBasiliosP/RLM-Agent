@@ -107,6 +107,15 @@ class TestDockerCommandFormat:
         assert "--env SCHOLAR_STRONG_BACKEND=lmstudio" in cmd
         assert cmd.startswith("docker mcp server add scholar-memory -- /bin/s")
 
+    def test_quotes_server_and_env_values(self):
+        cmd = installer._docker_mcp_command(
+            "/opt/My Server/bin/s",
+            {"TOKEN": "abc 123", "FLAG": "semi;colon"},
+        )
+        assert "docker mcp server add scholar-memory -- '/opt/My Server/bin/s'" in cmd
+        assert "--env 'TOKEN=abc 123'" in cmd
+        assert "--env 'FLAG=semi;colon'" in cmd
+
 
 class TestJsonAgentAddRemove:
     """Covers add_mcp_entry / remove_mcp_entry directly (LM Studio uses the same path)."""
