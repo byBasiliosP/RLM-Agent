@@ -223,7 +223,8 @@ while [[ $# -gt 0 ]]; do
         --uninstall)
             ACTION="uninstall"; shift ;;
         --backend)
-            BACKEND="${2:-}"; shift 2 ;;
+            if [[ $# -lt 2 ]] || [[ "$2" == --* ]]; then err "Missing value for --backend"; exit 1; fi
+            BACKEND="$2"; shift 2 ;;
         --backend=*)
             BACKEND="${1#--backend=}"; shift ;;
         --strong-model)
