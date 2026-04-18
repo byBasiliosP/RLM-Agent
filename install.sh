@@ -222,6 +222,17 @@ do_install() {
     "${VENV_DIR}/bin/scholaragent-install" "${py_args[@]}"
 }
 
+validate_backend() {
+    case "$1" in
+        cloud|lmstudio)
+            ;;
+        *)
+            err "Invalid value for --backend: $1 (expected: cloud or lmstudio)"
+            exit 1
+            ;;
+    esac
+}
+
 # --- Main ---
 
 ACTION="install"
@@ -231,8 +242,10 @@ while [[ $# -gt 0 ]]; do
             ACTION="uninstall"; shift ;;
         --backend)
             if [[ $# -lt 2 ]] || [[ "$2" == --* ]]; then err "Missing value for --backend"; exit 1; fi
+            validate_backend "$2"
             BACKEND="$2"; shift 2 ;;
         --backend=*)
+            validate_backend "${1#--backend=}"
             BACKEND="${1#--backend=}"; shift ;;
         --strong-model)
             if [[ $# -lt 2 ]] || [[ "$2" == --* ]]; then err "Missing value for --strong-model"; exit 1; fi
