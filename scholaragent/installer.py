@@ -230,6 +230,8 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
 
     # Build env
     env = _build_env(backend, strong_model, cheap_model)
+    if backend == "lmstudio":
+        env.setdefault("SCHOLAR_EMBEDDING_BACKEND", "lmstudio")
     _info(f"Backend: {backend}")
 
     # If the user didn't ask for lmstudio but one is running locally, suggest it.
@@ -247,7 +249,10 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
         if not os.environ.get("ANTHROPIC_API_KEY"):
             _warn("ANTHROPIC_API_KEY not set — set it before using the server")
     else:
-        embedding_backend = os.environ.get("SCHOLAR_EMBEDDING_BACKEND", "").strip().lower()
+        embedding_backend = env.get(
+            "SCHOLAR_EMBEDDING_BACKEND",
+            os.environ.get("SCHOLAR_EMBEDDING_BACKEND", ""),
+        ).strip().lower()
         if embedding_backend != "lmstudio" and not os.environ.get("OPENAI_API_KEY"):
             _warn("OPENAI_API_KEY not set — needed for embeddings")
 
