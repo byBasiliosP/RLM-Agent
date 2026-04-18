@@ -61,9 +61,11 @@ _prompt_yes_no() {
         [[ "$default" == "y" ]] && return 0 || return 1
     fi
     local reply=""
+    local normalized_reply=""
     read -r -p "$prompt" reply || reply=""
     reply="${reply:-$default}"
-    case "${reply,,}" in
+    normalized_reply="$(printf '%s' "$reply" | tr '[:upper:]' '[:lower:]')"
+    case "$normalized_reply" in
         y|yes) return 0 ;;
         *) return 1 ;;
     esac
