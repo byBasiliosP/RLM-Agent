@@ -192,8 +192,11 @@ def remove_codex_entry(config_path: Path) -> bool:
 # --- LM Studio runtime detection ------------------------------------------
 
 
-def _lmstudio_is_running(url: str = "http://localhost:1234/v1/models", timeout: float = 0.5) -> bool:
+def _lmstudio_is_running(url: str | None = None, timeout: float = 0.5) -> bool:
     """Best-effort check for a running LM Studio server. Returns False on any error."""
+    if url is None:
+        base_url = os.environ.get("SCHOLAR_LMSTUDIO_URL", "http://localhost:1234/v1")
+        url = f"{base_url.rstrip('/')}/models"
     try:
         import httpx
 
