@@ -231,11 +231,13 @@ while [[ $# -gt 0 ]]; do
         --backend=*)
             BACKEND="${1#--backend=}"; shift ;;
         --strong-model)
-            STRONG_MODEL="${2:-}"; shift 2 ;;
+            if [[ $# -lt 2 ]] || [[ "$2" == --* ]]; then err "Missing value for --strong-model"; exit 1; fi
+            STRONG_MODEL="$2"; shift 2 ;;
         --strong-model=*)
             STRONG_MODEL="${1#--strong-model=}"; shift ;;
         --cheap-model)
-            CHEAP_MODEL="${2:-}"; shift 2 ;;
+            if [[ $# -lt 2 ]] || [[ "$2" == --* ]]; then err "Missing value for --cheap-model"; exit 1; fi
+            CHEAP_MODEL="$2"; shift 2 ;;
         --cheap-model=*)
             CHEAP_MODEL="${1#--cheap-model=}"; shift ;;
         --yes|-y)
