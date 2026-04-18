@@ -102,7 +102,7 @@ The installer auto-detects:
 - **Codex CLI** — `~/.codex/config.toml` (TOML; upserts `[mcp_servers.scholar-memory]` without touching other sections).
 - **Docker Desktop MCP Toolkit** — if `~/.docker/mcp/` exists, the installer prints the exact `docker mcp server add …` command to run (Docker manages its MCP registry via CLI, not a static file).
 
-Each JSON target gets an `mcpServers.scholar-memory` entry, while Codex CLI gets a `[mcp_servers.scholar-memory]` table, both pointing at the `scholaragent-server` binary.
+Each JSON-based target gets an `mcpServers.scholar-memory` entry in its JSON config, while Codex CLI gets a `[mcp_servers.scholar-memory]` table in `~/.codex/config.toml`; both point at the `scholaragent-server` binary.
 
 ### Install from source (bash installer)
 
