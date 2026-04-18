@@ -161,12 +161,12 @@ do_install() {
     if [[ "$BACKEND" == "lmstudio" ]]; then
         info "Backend: lmstudio (local models, no cloud API keys needed)"
         if [[ -z "${OPENAI_API_KEY:-}" && "${SCHOLAR_EMBEDDING_BACKEND:-}" != "lmstudio" ]]; then
-            warn "OPENAI_API_KEY not set — embeddings remain configured for OpenAI by default"
-            warn "Embeddings will not use LM Studio unless you set SCHOLAR_EMBEDDING_BACKEND=lmstudio."
-            warn "If you want OpenAI embeddings instead, set OPENAI_API_KEY before re-running."
-            warn "To fully run local, also export:"
+            warn "OPENAI_API_KEY not set — embeddings remain configured for OpenAI by default."
+            warn "--backend lmstudio does not automatically switch the embedding backend."
+            warn "To use LM Studio embeddings, export:"
             echo "  export SCHOLAR_EMBEDDING_BACKEND=lmstudio"
             echo "  export SCHOLAR_EMBEDDING_MODEL=text-embedding-nomic-embed-text-v1.5"
+            warn "If you prefer OpenAI embeddings instead, set OPENAI_API_KEY before re-running."
         fi
     else
         info "Checking API keys..."
