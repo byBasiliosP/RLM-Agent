@@ -53,12 +53,16 @@ _maybe_detect_lmstudio() {
     fi
 }
 
-# Interactive prompt. Returns 0 on yes, 1 on no. Non-interactive/pipe -> default.
+# Interactive prompt. Returns 0 on yes, 1 on no.
+# Non-interactive/pipe mode defaults to "no" unless --yes was passed.
 _prompt_yes_no() {
     local prompt="$1"
     local default="${2:-n}"
-    if [[ ! -t 0 ]] || [[ $ASSUME_YES -eq 1 ]]; then
-        [[ "$default" == "y" ]] && return 0 || return 1
+    if [[ $ASSUME_YES -eq 1 ]]; then
+        return 0
+    fi
+    if [[ ! -t 0 ]]; then
+        return 1
     fi
     local reply=""
     local normalized_reply=""
