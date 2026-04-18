@@ -238,12 +238,16 @@ while [[ $# -gt 0 ]]; do
             if [[ $# -lt 2 ]] || [[ "$2" == --* ]]; then err "Missing value for --strong-model"; exit 1; fi
             STRONG_MODEL="$2"; shift 2 ;;
         --strong-model=*)
-            STRONG_MODEL="${1#--strong-model=}"; shift ;;
+            STRONG_MODEL="${1#--strong-model=}"
+            if [[ -z "$STRONG_MODEL" ]]; then err "Missing value for --strong-model"; exit 1; fi
+            shift ;;
         --cheap-model)
             if [[ $# -lt 2 ]] || [[ "$2" == --* ]]; then err "Missing value for --cheap-model"; exit 1; fi
             CHEAP_MODEL="$2"; shift 2 ;;
         --cheap-model=*)
-            CHEAP_MODEL="${1#--cheap-model=}"; shift ;;
+            CHEAP_MODEL="${1#--cheap-model=}"
+            if [[ -z "$CHEAP_MODEL" ]]; then err "Missing value for --cheap-model"; exit 1; fi
+            shift ;;
         --yes|-y)
             ASSUME_YES=1; shift ;;
         --help|-h)
