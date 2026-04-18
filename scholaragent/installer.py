@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -211,9 +212,12 @@ def _lmstudio_is_running(url: str | None = None, timeout: float = 0.5) -> bool:
 
 def _docker_mcp_command(server_cmd: str, env: dict) -> str:
     """Build the `docker mcp server add` command equivalent for manual paste."""
-    env_args = " ".join(f"--env {k}={v}" for k, v in env.items()) if env else ""
+    quoted_server_cmd = shlex.quote(server_cmd)
+    env_args = (
+        " ".join(f"--env {shlex.quote(f'{k}={v}')}" for k, v in env.items()) if env else ""
+    )
     extra = f" {env_args}" if env_args else ""
-    return f"docker mcp server add {MCP_SERVER_NAME} -- {server_cmd}{extra}".strip()
+    return f"docker mcp server add {MCP_SERVER_NAME} -- {quoted_server_cmd}{extra}".strip()
 
 
 def do_install(backend: str, strong_model: str | None, cheap_model: str | None) -> None:
