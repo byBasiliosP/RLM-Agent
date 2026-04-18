@@ -247,7 +247,8 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
         if not os.environ.get("ANTHROPIC_API_KEY"):
             _warn("ANTHROPIC_API_KEY not set — set it before using the server")
     else:
-        if not os.environ.get("OPENAI_API_KEY"):
+        embedding_backend = os.environ.get("SCHOLAR_EMBEDDING_BACKEND", "").strip().lower()
+        if embedding_backend != "lmstudio" and not os.environ.get("OPENAI_API_KEY"):
             _warn("OPENAI_API_KEY not set — needed for embeddings")
 
     # Register in detected JSON-config agents
