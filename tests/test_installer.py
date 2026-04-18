@@ -175,4 +175,4 @@ class TestInstallScriptFlags:
             capture_output=True, text=True,
         )
         assert result.returncode == 1
-        assert "Invalid --backend value" in result.stdout
+        assert "Invalid value for --backend" in result.stdout
