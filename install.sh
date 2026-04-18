@@ -77,7 +77,7 @@ _prompt_yes_no() {
 
 # Offer LM Studio fallback when cloud keys are missing.
 _offer_lmstudio_fallback() {
-    warn "No cloud API keys found."
+    warn "Missing required cloud API keys."
     if _lmstudio_running; then
         info "LM Studio IS running locally — we can switch to it instead."
         _prompt_yes_no "Use LM Studio instead of cloud? [Y/n] " "y"
