@@ -139,7 +139,7 @@ _CODEX_SECTION_RE = re.compile(
 
 
 def _toml_escape(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"')
+    return json.dumps(s)[1:-1]
 
 
 def _render_codex_section(server_cmd: str, env: dict) -> str:
