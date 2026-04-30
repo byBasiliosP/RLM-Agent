@@ -104,9 +104,16 @@ class TestInstallShellScriptNoStaleToolCount:
         )
 
     def test_install_sh_references_manifest(self):
-        """install.sh should source the tool list from the manifest."""
+        """install.sh should source the tool list from the manifest.
+
+        Either directly (legacy form) or by delegating registration to
+        `scholaragent-install`, which itself prints the tool list from
+        `scholaragent._manifest.MCP_TOOLS`.
+        """
         text = INSTALL_SH.read_text()
-        assert "scholaragent._manifest" in text or "MCP_TOOLS" in text, (
-            "install.sh should read MCP_TOOLS from scholaragent._manifest "
-            "so the displayed tool list cannot drift."
+        delegates_to_installer = "scholaragent-install" in text
+        references_manifest_directly = "scholaragent._manifest" in text or "MCP_TOOLS" in text
+        assert delegates_to_installer or references_manifest_directly, (
+            "install.sh should either reference scholaragent._manifest "
+            "directly or delegate tool-list printing to `scholaragent-install`."
         )

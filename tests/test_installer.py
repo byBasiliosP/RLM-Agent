@@ -168,3 +168,11 @@ class TestInstallScriptFlags:
             capture_output=True, text=True,
         )
         assert result.returncode == 1
+
+    def test_backend_rejects_invalid_value(self):
+        result = subprocess.run(
+            ["bash", INSTALL_SCRIPT, "--backend", "foo"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1
+        assert "Invalid value for --backend" in result.stdout
