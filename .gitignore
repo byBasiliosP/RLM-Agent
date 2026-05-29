@@ -4,6 +4,20 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.env
 .DS_Store
 uv.lock
+
+# Secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Database files (memory stores)
+*.db
+*.sqlite3
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
