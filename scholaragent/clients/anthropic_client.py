@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import anthropic
-
 from typing import TYPE_CHECKING
+
+import anthropic
 
 from scholaragent.clients.base import BaseLM
 from scholaragent.utils.retry import retry_with_backoff
@@ -24,7 +24,7 @@ class AnthropicClient(BaseLM):
         api_key: str | None = None,
         timeout: float = 120.0,
         max_tokens: int | None = None,
-        rate_limiter: "RateLimiter | None" = None,
+        rate_limiter: RateLimiter | None = None,
     ):
         super().__init__(model_name, timeout=timeout, max_tokens=max_tokens, rate_limiter=rate_limiter)
         self._sync_client = anthropic.Anthropic(
@@ -37,7 +37,7 @@ class AnthropicClient(BaseLM):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _record_usage(self, usage) -> None:  # noqa: ANN001
+    def _record_usage(self, usage) -> None:
         """Update tracked token counts from an API response usage object."""
         if usage is None:
             return

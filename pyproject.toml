@@ -45,10 +45,15 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.6",
 ]
 extraction = [
     "trafilatura>=1.8.0",
+]
+web = [
+    "playwright>=1.40.0",
 ]
 
 [project.urls]
@@ -59,6 +64,47 @@ Issues = "https://github.com/byBasiliosP/RLM-Agent/issues"
 [project.scripts]
 scholaragent-server = "scholaragent.mcp_server:main"
 scholaragent-install = "scholaragent.installer:main"
+
+[tool.pytest.ini_options]
+# No tests use async; the asyncio plugin causes deadlocks with
+# threading.Lock-based lazy init in RuntimeContainer and MemoryStore.
+addopts = "-p no:asyncio"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [".venv", "build", "dist", "tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E402",  # module-import-not-at-top (intentional deferred imports)
+    "E501",  # line too long (handled by formatter)
+    "B008",  # function calls in argument defaults
+    "SIM102",  # nested if (readability preference)
+    "SIM105",  # suppressible-exception (contextlib.suppress is not always clearer)
+    "SIM108",  # ternary vs if-else (preference)
+    "UP047",  # non-pep695-generic (requires refactor)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    "B007",   # unused loop control variable
+    "B011",   # assert False in tests is fine
+    "B017",   # assertRaises(Exception) is common in broad negative tests
+    "F401",   # allow unused imports (conditional imports in tests)
+    "F811",   # redefined names (common for fixture/helper shadowing)
+    "F841",   # unused variables are fine in test scaffolding
+    "RUF012", # mutable class defaults are fine for test helpers
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = false
+strict = false
 
 [build-system]
 requires = ["hatchling"]

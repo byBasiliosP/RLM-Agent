@@ -10,19 +10,33 @@ After `pip install scholaragent`:
 import argparse
 import json
 import os
+import re
+import shlex
 import shutil
 import sys
 from pathlib import Path
 
+from scholaragent._manifest import MCP_TOOLS
+
 MCP_SERVER_NAME = "scholar-memory"
 
-# Agent config locations
+# JSON-config agents: path -> {"mcpServers": {<name>: {command, env}}}
 AGENT_CONFIGS = {
     "Claude Code": Path.home() / ".claude" / "settings.json",
     "Cursor": Path.home() / ".cursor" / "mcp.json",
     "Windsurf": Path.home() / ".windsurf" / "mcp.json",
     "VS Code": Path.home() / ".vscode" / "mcp.json",
+    # LM Studio's MCP integration reads the same shape as Cursor/Windsurf.
+    "LM Studio": Path.home() / ".lmstudio" / "mcp.json",
 }
+
+# Codex CLI uses TOML with [mcp_servers.<name>] tables.
+CODEX_CONFIG = Path.home() / ".codex" / "config.toml"
+
+# Docker Desktop's MCP Toolkit registers servers via the `docker mcp` CLI,
+# not a static config file we can safely edit. We detect its presence and
+# print the exact command the user needs to run.
+DOCKER_MCP_DIR = Path.home() / ".docker" / "mcp"
 
 # ANSI colors
 GREEN = "\033[0;32m"
@@ -118,6 +132,94 @@ def remove_mcp_entry(config_path: Path) -> bool:
     return False
 
 
+# --- Codex CLI (TOML) ------------------------------------------------------
+
+_CODEX_SECTION_RE = re.compile(
+    rf"(?ms)^\[mcp_servers\.{re.escape(MCP_SERVER_NAME)}\]\s*\n(?:(?!\n\[).)*"
+)
+
+
+def _toml_escape(s: str) -> str:
+    return json.dumps(s)[1:-1]
+
+
+def _render_codex_section(server_cmd: str, env: dict) -> str:
+    """Render a [mcp_servers.scholar-memory] TOML section."""
+    lines = [
+        f"[mcp_servers.{MCP_SERVER_NAME}]",
+        f'command = "{_toml_escape(server_cmd)}"',
+    ]
+    if env:
+        env_pairs = ", ".join(f'{k} = "{_toml_escape(v)}"' for k, v in env.items())
+        lines.append(f"env = {{ {env_pairs} }}")
+    return "\n".join(lines) + "\n"
+
+
+def add_codex_entry(config_path: Path, server_cmd: str, env: dict) -> None:
+    """Upsert the scholar-memory Codex MCP entry.
+
+    Preserves any other content in the TOML file. If the file has an
+    existing `[mcp_servers.scholar-memory]` table, replaces it in place;
+    otherwise appends the new section.
+    """
+    new_section = _render_codex_section(server_cmd, env)
+    existing = config_path.read_text() if config_path.exists() else ""
+    if _CODEX_SECTION_RE.search(existing):
+        updated = _CODEX_SECTION_RE.sub(new_section, existing, count=1)
+    else:
+        separator = "" if not existing or existing.endswith("\n\n") else ("\n" if existing.endswith("\n") else "\n\n")
+        updated = existing + separator + new_section
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(updated)
+
+
+def remove_codex_entry(config_path: Path) -> bool:
+    """Remove the scholar-memory section from Codex's config.toml.
+
+    Returns True if a section was found and removed.
+    """
+    if not config_path.exists():
+        return False
+    original = config_path.read_text()
+    updated = _CODEX_SECTION_RE.sub("", original, count=1)
+    if updated == original:
+        return False
+    # Collapse any blank-line gap the removal left behind.
+    updated = re.sub(r"\n{3,}", "\n\n", updated).lstrip("\n")
+    config_path.write_text(updated)
+    return True
+
+
+# --- LM Studio runtime detection ------------------------------------------
+
+
+def _lmstudio_is_running(url: str | None = None, timeout: float = 0.5) -> bool:
+    """Best-effort check for a running LM Studio server. Returns False on any error."""
+    if url is None:
+        base_url = os.environ.get("SCHOLAR_LMSTUDIO_URL", "http://localhost:1234/v1")
+        url = f"{base_url.rstrip('/')}/models"
+    try:
+        import httpx
+
+        r = httpx.get(url, timeout=timeout)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+# --- Docker MCP Toolkit ---------------------------------------------------
+
+
+def _docker_mcp_command(server_cmd: str, env: dict) -> str:
+    """Build the `docker mcp server add` command equivalent for manual paste."""
+    quoted_server_cmd = shlex.quote(server_cmd)
+    env_args = (
+        " ".join(f"--env {shlex.quote(f'{k}={v}')}" for k, v in env.items()) if env else ""
+    )
+    extra = f" {env_args}" if env_args else ""
+    return f"docker mcp server add {MCP_SERVER_NAME} -- {quoted_server_cmd}{extra}".strip()
+
+
 def do_install(backend: str, strong_model: str | None, cheap_model: str | None) -> None:
     """Register the MCP server in all detected coding agents."""
     print()
@@ -132,7 +234,17 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
 
     # Build env
     env = _build_env(backend, strong_model, cheap_model)
+    if backend == "lmstudio":
+        env.setdefault("SCHOLAR_EMBEDDING_BACKEND", "lmstudio")
     _info(f"Backend: {backend}")
+
+    # If the user didn't ask for lmstudio but one is running locally, suggest it.
+    if backend != "lmstudio" and _lmstudio_is_running():
+        _info(
+            "LM Studio detected at http://localhost:1234. "
+            "To use it instead of cloud models, re-run with: "
+            "--backend lmstudio"
+        )
 
     # Validate keys
     if backend != "lmstudio":
@@ -141,10 +253,14 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
         if not os.environ.get("ANTHROPIC_API_KEY"):
             _warn("ANTHROPIC_API_KEY not set — set it before using the server")
     else:
-        if not os.environ.get("OPENAI_API_KEY"):
+        embedding_backend = env.get(
+            "SCHOLAR_EMBEDDING_BACKEND",
+            os.environ.get("SCHOLAR_EMBEDDING_BACKEND", ""),
+        ).strip().lower()
+        if embedding_backend != "lmstudio" and not os.environ.get("OPENAI_API_KEY"):
             _warn("OPENAI_API_KEY not set — needed for embeddings")
 
-    # Register in detected agents
+    # Register in detected JSON-config agents
     print()
     registered = 0
     for agent_name, config_path in AGENT_CONFIGS.items():
@@ -154,7 +270,25 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
             _ok(f"Registered in {agent_name} ({config_path})")
             registered += 1
 
-    if registered == 0:
+    # Codex CLI (TOML)
+    if CODEX_CONFIG.parent.exists():
+        _info("Found Codex CLI — registering...")
+        add_codex_entry(CODEX_CONFIG, server_cmd, env)
+        _ok(f"Registered in Codex CLI ({CODEX_CONFIG})")
+        registered += 1
+
+    # Docker Desktop MCP Toolkit (CLI-managed; we only detect and guide)
+    if DOCKER_MCP_DIR.exists():
+        _info("Found Docker Desktop MCP Toolkit.")
+        _warn(
+            "Docker registers MCP servers via the `docker mcp` CLI, not a "
+            "static config file. Run the following command once:"
+        )
+        print()
+        print(f"    {_docker_mcp_command(server_cmd, env)}")
+        print()
+
+    if registered == 0 and not DOCKER_MCP_DIR.exists():
         _warn("No coding agents detected.")
         _warn("Manually add to your agent's MCP config:")
         print()
@@ -177,7 +311,7 @@ def do_install(backend: str, strong_model: str | None, cheap_model: str | None) 
     print()
     _ok(f"Registered in {registered} agent(s)")
     _info("Restart your coding agent to pick up the new MCP server.")
-    _info("Tools: memory_lookup, memory_research, memory_store, memory_forget, memory_status")
+    _info(f"{len(MCP_TOOLS)} tools available: {', '.join(MCP_TOOLS)}")
     print()
 
 
@@ -195,6 +329,22 @@ def do_uninstall() -> None:
                 removed += 1
             else:
                 _info(f"Not found in {agent_name}")
+
+    # Codex CLI
+    if CODEX_CONFIG.exists():
+        _info("Checking Codex CLI...")
+        if remove_codex_entry(CODEX_CONFIG):
+            _ok("Removed from Codex CLI")
+            removed += 1
+        else:
+            _info("Not found in Codex CLI")
+
+    # Docker MCP Toolkit
+    if DOCKER_MCP_DIR.exists():
+        _warn(
+            "Docker MCP Toolkit must be cleaned up with: "
+            f"`docker mcp server remove {MCP_SERVER_NAME}`"
+        )
 
     print()
     if removed:

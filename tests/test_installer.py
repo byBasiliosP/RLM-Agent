@@ -4,9 +4,6 @@ import json
 import os
 import subprocess
 
-import pytest
-
-
 SCRIPT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_SCRIPT = os.path.join(SCRIPT_DIR, "install.sh")
 VENV_PYTHON = os.path.join(SCRIPT_DIR, ".venv", "bin", "python")
@@ -171,3 +168,11 @@ class TestInstallScriptFlags:
             capture_output=True, text=True,
         )
         assert result.returncode == 1
+
+    def test_backend_rejects_invalid_value(self):
+        result = subprocess.run(
+            ["bash", INSTALL_SCRIPT, "--backend", "foo"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1
+        assert "Invalid value for --backend" in result.stdout

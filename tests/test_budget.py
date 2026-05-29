@@ -1,6 +1,5 @@
 """Tests for budget enforcement in agent runs."""
 
-import pytest
 
 from scholaragent.utils.budget import Budget
 
@@ -49,7 +48,6 @@ class TestBudgetInAgent:
         """Agent.run() should stop when budget is exhausted."""
         from unittest.mock import MagicMock, patch
 
-        from scholaragent.core.types import AgentResult
         from scholaragent.utils.budget import Budget
 
         # Create a budget that exhausts after 1 iteration
@@ -82,7 +80,8 @@ class TestBudgetInAgent:
 
 class TestDispatcherBudget:
     def test_dispatcher_creates_sub_budgets(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
+
         from scholaragent.core.dispatcher import Dispatcher
         from scholaragent.core.registry import AgentRegistry
         from scholaragent.core.types import AgentResult

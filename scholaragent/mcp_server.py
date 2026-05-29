@@ -29,159 +29,87 @@ Model backend configuration via environment variables:
 import atexit
 import json
 import logging
-import os
 import threading
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 from mcp.server.fastmcp import FastMCP
 
-from scholaragent.memory.embeddings import OpenAIEmbeddings
-from scholaragent.memory.store import MemoryStore
 from scholaragent.memory.research import ResearchPipeline
+from scholaragent.memory.store import MemoryStore
 
 # --- Validation constants ---
 
 VALID_DEPTHS = frozenset({"quick", "normal", "deep"})
 VALID_FOCUSES = frozenset({"implementation", "theory", "comparison"})
+VALID_SOURCE_TYPES = frozenset({"paper", "code", "docs", "synthesized_report"})
 
-# --- Global state ---
+# Input length limits (characters)
+MAX_QUERY_LEN = 2000
+MAX_ID_LEN = 256
+MAX_TAGS = 20
+MAX_TAG_LEN = 64
+MAX_CONTENT_LEN = 200_000
 
-_store: MemoryStore | None = None
-_pipeline: ResearchPipeline | None = None
-_agent_handler = None  # LMHandler, lazy-init
-_agent_registry = None  # AgentRegistry, lazy-init
-_agent_dispatcher = None  # Dispatcher, lazy-init
-_init_lock = threading.Lock()
-_agent_lock = threading.Lock()
 
-DATA_DIR = Path(os.environ.get("SCHOLAR_MEMORY_DIR", Path.home() / ".scholaragent"))
-DB_PATH = os.environ.get("SCHOLAR_MEMORY_DB", str(DATA_DIR / "memory.db"))
+def _validate_text(name: str, value: str, max_len: int, allow_empty: bool = False) -> str | None:
+    """Return an error string if invalid, else None."""
+    if not isinstance(value, str):
+        return f"{name} must be a string"
+    stripped = value.strip()
+    if not allow_empty and not stripped:
+        return f"{name} must be non-empty"
+    if len(value) > max_len:
+        return f"{name} exceeds max length of {max_len} characters"
+    return None
+
+# --- Runtime container (replaces former module-level globals) ---
+
+_container = None  # RuntimeContainer, lazy-init
+_container_lock = threading.Lock()
 
 
 def _build_model_config() -> dict:
     """Build strong/cheap model config dicts from environment variables."""
-    lmstudio_url = os.environ.get("SCHOLAR_LMSTUDIO_URL", "http://localhost:1234/v1")
+    from scholaragent.config import ScholarConfig
 
-    strong_backend = os.environ.get("SCHOLAR_STRONG_BACKEND", "anthropic")
-    strong_model = os.environ.get("SCHOLAR_STRONG_MODEL", "claude-sonnet-4-6")
-    cheap_backend = os.environ.get("SCHOLAR_CHEAP_BACKEND", "openai")
-    cheap_model = os.environ.get("SCHOLAR_CHEAP_MODEL", "gpt-4o-mini")
-
-    strong = {"backend": strong_backend, "model_name": strong_model}
-    cheap = {"backend": cheap_backend, "model_name": cheap_model}
-
-    if strong_backend == "lmstudio":
-        strong["base_url"] = lmstudio_url
-    if cheap_backend == "lmstudio":
-        cheap["base_url"] = lmstudio_url
-
-    return {"strong": strong, "cheap": cheap}
+    return ScholarConfig.from_env().model_config_dict()
 
 
-def _cleanup():
-    """Close the global memory store on interpreter exit."""
-    global _store
-    if _store is not None:
-        _store.close()
-        _store = None
+def _get_container():
+    """Lazy-init the runtime container (thread-safe)."""
+    global _container
+    if _container is not None:
+        return _container
+    with _container_lock:
+        if _container is not None:
+            return _container
+        from scholaragent.config import ScholarConfig
+        from scholaragent.runtime import RuntimeContainer
 
-
-atexit.register(_cleanup)
+        cfg = ScholarConfig.from_env()
+        _container = RuntimeContainer(
+            data_dir=cfg.data_dir,
+            db_path=cfg.db_path,
+            model_config=cfg.model_config_dict(),
+        )
+        atexit.register(_container.close)
+        return _container
 
 
 def _get_store() -> MemoryStore:
-    """Lazy-init the global memory store (thread-safe)."""
-    global _store
-    if _store is not None:
-        return _store
-    with _init_lock:
-        if _store is not None:
-            return _store
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        embeddings = OpenAIEmbeddings()
-        _store = MemoryStore(db_path=DB_PATH, embeddings=embeddings)
-        logger.info("Initialized memory store at %s", DB_PATH)
-        return _store
+    return _get_container().get_store()
 
 
 def _get_pipeline() -> ResearchPipeline:
-    """Lazy-init the research pipeline (thread-safe)."""
-    global _pipeline
-    if _pipeline is not None:
-        return _pipeline
-    with _init_lock:
-        if _pipeline is not None:
-            return _pipeline
-        _pipeline = ResearchPipeline(store=_get_store())
-        return _pipeline
-
-
-def _get_agent_infra():
-    """Lazy-init agent infrastructure for normal/deep depth levels (thread-safe).
-
-    Returns (handler, registry, dispatcher).
-    """
-    global _agent_handler, _agent_registry, _agent_dispatcher
-    if _agent_handler is not None:
-        return _agent_handler, _agent_registry, _agent_dispatcher
-
-    with _agent_lock:
-        if _agent_handler is not None:
-            return _agent_handler, _agent_registry, _agent_dispatcher
-
-        from scholaragent.clients.router import ModelConfig, ModelRouter
-        from scholaragent.clients.token_counter import TokenCounter
-        from scholaragent.core.handler import LMHandler
-        from scholaragent.core.registry import AgentRegistry
-        from scholaragent.core.dispatcher import Dispatcher
-        from scholaragent.agents.scout import ScoutAgent
-        from scholaragent.agents.reader import ReaderAgent
-        from scholaragent.agents.critic import CriticAgent
-        from scholaragent.agents.analyst import AnalystAgent
-        from scholaragent.agents.synthesizer import SynthesizerAgent
-
-        config = _build_model_config()
-        router = ModelRouter(
-            strong=ModelConfig(**config["strong"]),
-            cheap=ModelConfig(**config["cheap"]),
-        )
-
-        token_counter = TokenCounter()
-        strong_client = router.get_client("dispatcher")
-        handler = LMHandler(
-            client=strong_client,
-            token_counter=token_counter,
-            verbose=False,
-        )
-        cheap_client = router.get_client("scout")
-        handler.register_client(cheap_client.model_name, cheap_client)
-        handler.start()
-
-        registry = AgentRegistry()
-        registry.register(ScoutAgent())
-        registry.register(ReaderAgent())
-        registry.register(CriticAgent())
-        registry.register(AnalystAgent())
-        registry.register(SynthesizerAgent())
-
-        dispatcher = Dispatcher(registry=registry, handler=handler)
-
-        _agent_handler = handler
-        _agent_registry = registry
-        _agent_dispatcher = dispatcher
-
-        atexit.register(handler.stop)
-        logger.info("Initialized agent infrastructure: %s", registry.list_agents())
-        return handler, registry, dispatcher
+    return _get_container().get_pipeline()
 
 
 def _ensure_pipeline_agents(pipeline: ResearchPipeline) -> None:
     """Upgrade a pipeline with agent infrastructure if not already set."""
     if pipeline.has_agent_infra:
         return
-    handler, registry, dispatcher = _get_agent_infra()
+    handler, registry, dispatcher = _get_container().get_agent_infra()
     pipeline.set_agent_infra(handler, registry, dispatcher)
 
 
@@ -195,8 +123,16 @@ def _memory_lookup(
     max_results: int = 5,
     compact: bool = True,
 ) -> dict:
+    if err := _validate_text("query", query, MAX_QUERY_LEN):
+        return {"error": err}
     if not 1 <= max_results <= 50:
         return {"error": "max_results must be between 1 and 50"}
+    if sources is not None:
+        if not isinstance(sources, list) or not all(isinstance(s, str) for s in sources):
+            return {"error": "sources must be a list of strings"}
+        invalid = [s for s in sources if s not in VALID_SOURCE_TYPES]
+        if invalid:
+            return {"error": f"invalid source types: {invalid}. Allowed: {sorted(VALID_SOURCE_TYPES)}"}
     results = store.search(query, max_results=max_results, sources=sources)
     return {
         "results": [
@@ -217,6 +153,8 @@ def _memory_research(
     depth: str = "normal",
     focus: str = "implementation",
 ) -> dict:
+    if err := _validate_text("query", query, MAX_QUERY_LEN):
+        return {"error": err}
     if depth not in VALID_DEPTHS:
         return {"error": f"depth must be one of {sorted(VALID_DEPTHS)}"}
     if focus not in VALID_FOCUSES:
@@ -237,15 +175,23 @@ def _memory_store(
     source: str,
     tags: list[str],
 ) -> dict:
-    if not content or not content.strip():
-        return {"error": "content must be non-empty"}
+    if err := _validate_text("content", content, MAX_CONTENT_LEN):
+        return {"error": err}
+    if err := _validate_text("source", source, MAX_ID_LEN):
+        return {"error": err}
+    if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
+        return {"error": "tags must be a list of strings"}
+    if len(tags) > MAX_TAGS:
+        return {"error": f"tags exceeds max of {MAX_TAGS} items"}
+    if any(len(t) > MAX_TAG_LEN for t in tags):
+        return {"error": f"each tag must be at most {MAX_TAG_LEN} characters"}
     from scholaragent.memory.types import MemoryEntry
 
     # Infer source_type from source string
     source_type = "docs"
     if source.startswith("arxiv:") or source.startswith("s2:"):
         source_type = "paper"
-    elif source.startswith("github:") or source.startswith("https://github.com"):
+    elif source.startswith("github:") or source.startswith("https://github.com/"):
         source_type = "code"
 
     entry = MemoryEntry(
@@ -260,6 +206,8 @@ def _memory_store(
 
 
 def _memory_get(store: MemoryStore, entry_id: str) -> dict:
+    if err := _validate_text("entry_id", entry_id, MAX_ID_LEN):
+        return {"error": err}
     entry = store.get(entry_id)
     if entry is None:
         return {"error": f"No entry found with id: {entry_id}"}
@@ -270,19 +218,55 @@ def _memory_forget(
     store: MemoryStore,
     query_or_id: str,
 ) -> dict:
+    if err := _validate_text("query_or_id", query_or_id, MAX_QUERY_LEN):
+        return {"error": err}
     deleted = store.forget(query_or_id)
     return {"deleted": deleted, "query_or_id": query_or_id}
 
 
-def _memory_status(store: MemoryStore) -> dict:
+def _memory_status(store: MemoryStore, token_counter=None) -> dict:
     status = store.status()
-    # Include token usage and cost info if agent infrastructure is active
-    if _agent_handler is not None and hasattr(_agent_handler, "token_counter"):
-        tc = _agent_handler.token_counter
-        if tc is not None:
-            status["token_usage"] = tc.summary()
-            status["estimated_costs"] = tc.cost_summary()
+    # Include token usage and cost info if available
+    if token_counter is not None:
+        status["token_usage"] = token_counter.summary()
+        status["estimated_costs"] = token_counter.cost_summary()
     return status
+
+
+def _memory_stream_list(
+    store: MemoryStore,
+    query: str | None = None,
+    limit: int = 5,
+) -> dict:
+    if not 1 <= limit <= 50:
+        return {"error": "limit must be between 1 and 50"}
+    if query is not None:
+        if err := _validate_text("query", query, MAX_QUERY_LEN, allow_empty=True):
+            return {"error": err}
+        query = query.strip() or None
+    streams = store.list_streams(query=query, limit=limit)
+    return {"streams": streams}
+
+
+def _memory_stream_get(
+    store: MemoryStore,
+    stream_id: str,
+    agent: str | None = None,
+) -> dict:
+    if err := _validate_text("stream_id", stream_id, MAX_ID_LEN):
+        return {"error": err}
+    if agent is not None:
+        if err := _validate_text("agent", agent, MAX_ID_LEN):
+            return {"error": err}
+    stream = store.load_stream(stream_id)
+    if stream is None:
+        return {"error": f"No stream found with id: {stream_id}"}
+    data = stream.read(agent=agent)
+    data["id"] = stream.id
+    data["query"] = stream.query
+    data["created_at"] = stream.created_at
+    data["updated_at"] = stream.updated_at
+    return data
 
 
 # --- MCP Server ---
@@ -386,7 +370,8 @@ def memory_status() -> str:
 
     Returns total entries, breakdown by source type, and research history.
     """
-    result = _memory_status(_get_store())
+    container = _get_container()
+    result = _memory_status(container.get_store(), token_counter=container.get_token_counter())
     return json.dumps(result, indent=2)
 
 
@@ -399,6 +384,45 @@ def memory_model_config() -> str:
     """
     config = _build_model_config()
     return json.dumps(config, indent=2)
+
+
+@mcp.tool()
+def memory_stream_list(
+    query: str | None = None,
+    limit: int = 5,
+) -> str:
+    """List recent research pipeline context streams.
+
+    Shows metadata for past research runs including which agents
+    participated and how many events were recorded. Use to find
+    a stream_id for memory_stream_get.
+
+    Args:
+        query: Filter by research query text (optional)
+        limit: Maximum streams to return (default 5)
+    """
+    result = _memory_stream_list(_get_store(), query, limit)
+    return json.dumps(result, indent=2)
+
+
+@mcp.tool()
+def memory_stream_get(
+    stream_id: str,
+    agent: str | None = None,
+) -> str:
+    """Get full context from a research pipeline run.
+
+    Returns the structured state (papers, findings, assessments,
+    themes, synthesis), conversation traces, and event log from
+    a specific research run. Use to understand HOW a conclusion
+    was reached, not just WHAT was concluded.
+
+    Args:
+        stream_id: Stream ID from memory_stream_list
+        agent: Filter to one agent's data (optional: "scout", "reader", "critic", "analyst", "synthesizer")
+    """
+    result = _memory_stream_get(_get_store(), stream_id, agent)
+    return json.dumps(result, indent=2)
 
 
 def main():

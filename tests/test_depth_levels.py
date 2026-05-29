@@ -2,9 +2,9 @@
 
 import os
 import tempfile
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock, patch
 
 from scholaragent.memory.research import ResearchPipeline
 
@@ -29,15 +29,18 @@ def store():
         s.close()
 
 
-def _patch_sources():
-    """Context manager to mock all source fetchers."""
-    return patch.multiple(
-        "scholaragent.memory.research",
-        search_arxiv=MagicMock(return_value='[{"arxiv_id": "123", "title": "Test", "authors": ["A"], "abstract": "Test abstract", "published": "2024", "categories": []}]'),
-        search_semantic_scholar=MagicMock(return_value='[]'),
-        search_github_code=MagicMock(return_value=[]),
-        search_docs=MagicMock(return_value=[]),
+def _mock_collector(results=None, errors=None):
+    """Return a mock SourceCollector with canned results."""
+    collector = MagicMock()
+    collector.collect.return_value = (
+        results if results is not None else [
+            {"content": "Title: Test\n\nAbstract: Test abstract",
+             "source_type": "paper", "source_ref": "arxiv:123"},
+        ],
+        errors if errors is not None else [],
     )
+    collector.deduplicate.side_effect = lambda xs: xs
+    return collector
 
 
 class TestHasAgentInfra:
@@ -66,19 +69,17 @@ class TestHasAgentInfra:
 
 class TestQuickDepth:
     def test_quick_indexes_raw_results(self, store):
-        pipeline = ResearchPipeline(store=store)
-        with _patch_sources():
-            result = pipeline.run("test", depth="quick")
-            assert result["depth"] == "quick"
-            assert result["entries_added"] > 0
-            assert store.count() > 0
+        pipeline = ResearchPipeline(store=store, collector=_mock_collector())
+        result = pipeline.run("test", depth="quick")
+        assert result["depth"] == "quick"
+        assert result["entries_added"] > 0
+        assert store.count() > 0
 
     def test_normal_falls_back_to_quick_without_infra(self, store):
-        pipeline = ResearchPipeline(store=store)
-        with _patch_sources():
-            result = pipeline.run("test", depth="normal")
-            assert result["status"] == "completed"
-            assert result["entries_added"] > 0
+        pipeline = ResearchPipeline(store=store, collector=_mock_collector())
+        result = pipeline.run("test", depth="normal")
+        assert result["status"] == "completed"
+        assert result["entries_added"] > 0
 
 
 class TestNormalDepth:
@@ -118,13 +119,13 @@ class TestNormalDepth:
             handler=mock_handler,
             registry=mock_registry,
             dispatcher=MagicMock(),
+            collector=_mock_collector(),
         )
 
-        with _patch_sources():
-            result = pipeline.run("RLHF", depth="normal")
-            assert result["status"] == "completed"
-            assert result["depth"] == "normal"
-            mock_scout.run.assert_called_once()
+        result = pipeline.run("RLHF", depth="normal")
+        assert result["status"] == "completed"
+        assert result["depth"] == "normal"
+        mock_scout.run.assert_called_once()
 
     def test_normal_falls_back_on_scout_failure(self, store):
         from scholaragent.core.types import AgentResult
@@ -142,12 +143,12 @@ class TestNormalDepth:
             handler=mock_handler,
             registry=mock_registry,
             dispatcher=MagicMock(),
+            collector=_mock_collector(),
         )
 
-        with _patch_sources():
-            result = pipeline.run("test", depth="normal")
-            assert result["status"] == "completed"
-            assert result["entries_added"] >= 0
+        result = pipeline.run("test", depth="normal")
+        assert result["status"] == "completed"
+        assert result["entries_added"] >= 0
 
 
 class TestDeepDepth:
@@ -171,6 +172,42 @@ class TestDeepDepth:
         assert result["depth"] == "deep"
         assert result["entries_added"] == 1
         mock_dispatcher.run.assert_called_once()
+
+    def test_deep_synthesis_stored_as_synthesized_report(self, store):
+        """Deep-depth synthesis output must be classified as synthesized_report.
+
+        Regression guard: previously the deep path stored its output as
+        source_type="paper" with source_ref="deep-research:...", which
+        polluted the paper namespace. It should use its own taxonomy.
+        """
+        from scholaragent.core.types import AgentResult
+
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.run.return_value = AgentResult(
+            agent_name="dispatcher",
+            task="test",
+            result="# Full synthesis report\n\nKey findings on RLHF...",
+            iterations=5,
+            success=True,
+        )
+
+        pipeline = ResearchPipeline(
+            store=store,
+            handler=MagicMock(),
+            registry=MagicMock(),
+            dispatcher=mock_dispatcher,
+        )
+
+        result = pipeline.run("RLHF deep taxonomy", depth="deep")
+        assert result["entries_added"] == 1
+
+        # Inspect the stored entry — it must be tagged synthesized_report,
+        # not paper, and should carry the deep-research: source_ref prefix.
+        matches = store.search("RLHF deep taxonomy", max_results=5)
+        assert len(matches) == 1
+        entry, _ = matches[0]
+        assert entry.source_type == "synthesized_report"
+        assert entry.source_ref.startswith("deep-research:")
 
     def test_deep_falls_back_on_dispatcher_failure(self, store):
         mock_handler = MagicMock()
@@ -204,9 +241,38 @@ class TestDeepDepth:
             handler=mock_handler,
             registry=mock_registry,
             dispatcher=mock_dispatcher,
+            collector=_mock_collector(),
         )
 
-        with _patch_sources():
-            result = pipeline.run("test", depth="deep")
-            # Should fall back to normal, then complete
-            assert result["status"] == "completed"
+        result = pipeline.run("test", depth="deep")
+        # Should fall back to normal, then complete
+        assert result["status"] == "completed"
+
+    def test_deep_fallback_exposes_both_depths(self, store):
+        """When deep falls back, requested_depth and actual_depth must differ."""
+        mock_handler = MagicMock()
+        mock_dispatcher = MagicMock()
+        mock_dispatcher.run.side_effect = RuntimeError("LLM unavailable")
+
+        from scholaragent.core.types import AgentResult
+
+        mock_scout = MagicMock()
+        mock_scout.run.return_value = AgentResult(
+            agent_name="scout", task="test", result="found", iterations=1, success=True
+        )
+        mock_registry = MagicMock()
+        mock_registry.get = lambda name: mock_scout
+
+        pipeline = ResearchPipeline(
+            store=store,
+            handler=mock_handler,
+            registry=mock_registry,
+            dispatcher=mock_dispatcher,
+            collector=_mock_collector(),
+        )
+
+        result = pipeline.run("fallback-visibility", depth="deep")
+        assert result["status"] == "completed"
+        assert result["requested_depth"] == "deep"
+        assert result["actual_depth"] in ("normal", "quick")
+        assert result["fallback_reason"]

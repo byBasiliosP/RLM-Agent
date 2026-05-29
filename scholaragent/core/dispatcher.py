@@ -6,12 +6,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from scholaragent.core.agent import SpecialistAgent
+from scholaragent.core.context import ContextStream
 from scholaragent.core.handler import LMHandler
 from scholaragent.core.registry import AgentRegistry
 from scholaragent.core.types import AgentResult
 from scholaragent.utils.prompts import DISPATCHER_SYSTEM_PROMPT
 
 if TYPE_CHECKING:
+    from scholaragent.memory.store import MemoryStore
     from scholaragent.utils.budget import Budget
 
 
@@ -29,14 +31,21 @@ class Dispatcher(SpecialistAgent):
         registry: AgentRegistry,
         handler: LMHandler,
         budget: Budget | None = None,
+        store: MemoryStore | None = None,
     ):
         self._registry = registry
         self._handler = handler
         self._budget = budget
+        self._store = store
+        self._stream = None
 
     @property
     def name(self) -> str:
         return "dispatcher"
+
+    def set_store(self, store: MemoryStore) -> None:
+        """Attach a MemoryStore so dispatched agents can use memory tools."""
+        self._store = store
 
     @property
     def system_prompt(self) -> str:
@@ -69,6 +78,8 @@ class Dispatcher(SpecialistAgent):
             handler=self._handler,
             max_iterations=10,
             budget=sub_budget,
+            store=self._store,
+            stream=self._stream,
         )
 
         # Roll up sub-budget usage to dispatcher budget
@@ -88,15 +99,28 @@ class Dispatcher(SpecialistAgent):
         verbose: bool = False,
         budget: Budget | None = None,
     ) -> AgentResult:
-        """Override run() to inject ``_dispatch_agent`` as the ``call_agent`` function."""
-        # Use the provided budget or the one from __init__
+        """Override run() to create ContextStream and inject ``_dispatch_agent``."""
         if budget is not None:
             self._budget = budget
-        return super().run(
+
+        # Create a ContextStream for this pipeline run
+        self._stream = ContextStream(
+            query=task,
+            on_save=self._store.save_stream if self._store is not None else None,
+        )
+
+        result = super().run(
             task=task,
             handler=self._handler,
             max_iterations=max_iterations,
             agent_call_fn=self._dispatch_agent,
             verbose=verbose,
             budget=self._budget,
+            stream=self._stream,
         )
+
+        # Final persist
+        if self._store is not None:
+            self._stream.flush()
+
+        return result

@@ -9,7 +9,6 @@ from scholaragent.core.comms import socket_recv, socket_request, socket_send
 from scholaragent.core.handler import LMHandler
 from scholaragent.core.types import ModelUsageSummary, UsageSummary
 
-
 # ---------------------------------------------------------------------------
 # FakeLM test double
 # ---------------------------------------------------------------------------
@@ -176,6 +175,7 @@ class TestTokenCounterWiring:
     def test_handler_records_usage(self):
         """LMHandler records token usage when token_counter is provided."""
         from unittest.mock import MagicMock
+
         from scholaragent.clients.token_counter import TokenCounter
 
         mock_client = MagicMock()
@@ -208,6 +208,7 @@ class TestTokenCounterWiring:
     def test_handler_verbose_logs(self, capsys):
         """LMHandler logs token usage when verbose=True."""
         from unittest.mock import MagicMock
+
         from scholaragent.clients.token_counter import TokenCounter
 
         mock_client = MagicMock()

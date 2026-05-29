@@ -7,6 +7,7 @@ Rate-limited to respect arXiv's 3-second delay requirement.
 import json
 import logging
 import tempfile
+import threading
 import time
 
 import httpx
@@ -18,6 +19,7 @@ _http_client = httpx.Client(timeout=60.0, follow_redirects=True)
 # arXiv requires 3-second delay between requests
 _ARXIV_PDF_DELAY = 3.0
 _last_pdf_fetch: float = 0.0
+_pdf_fetch_lock = threading.Lock()
 
 MAX_PDF_TEXT_LENGTH = 50_000  # ~12k tokens
 
@@ -41,21 +43,27 @@ def fetch_arxiv_pdf(arxiv_id: str) -> str:
     except ImportError:
         return json.dumps({"error": "pypdf not installed. Install with: pip install 'pypdf>=4.0'"})
 
-    # Rate limit: 3-second delay between arXiv PDF downloads
-    elapsed = time.monotonic() - _last_pdf_fetch
-    if elapsed < _ARXIV_PDF_DELAY:
-        time.sleep(_ARXIV_PDF_DELAY - elapsed)
-
     url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
     logger.info("Fetching PDF: %s", url)
 
-    try:
-        response = _http_client.get(url)
-        response.raise_for_status()
-        _last_pdf_fetch = time.monotonic()
-    except Exception as e:
-        logger.warning("Failed to download PDF %s: %s", arxiv_id, e)
-        return json.dumps({"error": f"Download failed: {e}"})
+    # Serialize concurrent arXiv PDF fetches and enforce 3-second delay.
+    with _pdf_fetch_lock:
+        elapsed = time.monotonic() - _last_pdf_fetch
+        if elapsed < _ARXIV_PDF_DELAY:
+            time.sleep(_ARXIV_PDF_DELAY - elapsed)
+        try:
+            response = _http_client.get(url)
+            response.raise_for_status()
+        except Exception as e:
+            # Log programming errors at higher severity for visibility; network
+            # errors still gracefully degrade as before.
+            if not isinstance(e, httpx.HTTPError):
+                logger.exception("Unexpected PDF fetch error for %s", arxiv_id)
+            else:
+                logger.warning("Failed to download PDF %s: %s", arxiv_id, e)
+            return json.dumps({"error": f"Download failed: {e}"})
+        finally:
+            _last_pdf_fetch = time.monotonic()
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:

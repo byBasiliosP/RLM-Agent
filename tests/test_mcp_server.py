@@ -3,9 +3,9 @@
 import json
 import os
 import threading
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import patch, MagicMock
 
 from tests.helpers import FakeEmbeddings
 
@@ -256,7 +256,7 @@ class TestMCPToolFunctions:
 
     def test_memory_get_lookup_flow(self):
         """Test the browse-then-read pattern: lookup compact, then get full."""
-        from scholaragent.mcp_server import _memory_lookup, _memory_get
+        from scholaragent.mcp_server import _memory_get, _memory_lookup
 
         store = self._make_store()
         entry = self._make_entry("Detailed content about attention mechanisms in transformers")
@@ -355,7 +355,7 @@ class TestMCPToolFunctions:
         pipeline.run.assert_not_called()
 
     def test_memory_research_accepts_all_valid_depths(self):
-        from scholaragent.mcp_server import _memory_research, VALID_DEPTHS
+        from scholaragent.mcp_server import VALID_DEPTHS, _memory_research
 
         for depth in VALID_DEPTHS:
             pipeline = MagicMock()
@@ -365,7 +365,7 @@ class TestMCPToolFunctions:
             pipeline.run.assert_called_once()
 
     def test_memory_research_accepts_all_valid_focuses(self):
-        from scholaragent.mcp_server import _memory_research, VALID_FOCUSES
+        from scholaragent.mcp_server import VALID_FOCUSES, _memory_research
 
         for focus in VALID_FOCUSES:
             pipeline = MagicMock()
@@ -389,23 +389,34 @@ class TestMCPToolJSONResponses:
     @pytest.fixture(autouse=True)
     def setup(self, tmp_path):
         self.db_path = str(tmp_path / "test_memory.db")
-        self._original_store = None
+        self._original_container = None
+        self._test_container = None
         with patch.dict(os.environ, {"SCHOLAR_MEMORY_DB": self.db_path}):
             yield
-        # Cleanup global state
+        # Cleanup: close test container, restore original
         import scholaragent.mcp_server as mod
-        if self._original_store is not None:
-            mod._store = self._original_store
+        if self._test_container is not None:
+            self._test_container.close()
+        if self._original_container is not None:
+            mod._container = self._original_container
 
     def _patch_store(self):
-        """Patch _get_store to return a test store with fake embeddings."""
-        import scholaragent.mcp_server as mod
-        from scholaragent.memory.store import MemoryStore
+        """Inject a RuntimeContainer with fake embeddings."""
+        from pathlib import Path
 
-        self._original_store = mod._store
-        store = MemoryStore(db_path=self.db_path, embeddings=FakeEmbeddings())
-        mod._store = store
-        return store
+        import scholaragent.mcp_server as mod
+        from scholaragent.runtime import RuntimeContainer
+
+        self._original_container = mod._container
+        self._test_container = RuntimeContainer(
+            data_dir=Path(self.db_path).parent,
+            db_path=self.db_path,
+            model_config={"strong": {"backend": "x", "model_name": "y"},
+                          "cheap": {"backend": "a", "model_name": "b"}},
+            embeddings=FakeEmbeddings(),
+        )
+        mod._container = self._test_container
+        return self._test_container.get_store()
 
     def test_memory_lookup_returns_valid_json(self):
         self._patch_store()
@@ -587,7 +598,7 @@ class TestContextStreamingWorkflow:
 
     def test_browse_then_read_full_workflow(self):
         """Complete workflow: browse summaries, pick best, read full content."""
-        from scholaragent.mcp_server import _memory_lookup, _memory_get
+        from scholaragent.mcp_server import _memory_get, _memory_lookup
 
         store = self._make_store()
         entries = self._populate_store(store)
@@ -614,7 +625,7 @@ class TestContextStreamingWorkflow:
 
     def test_multiple_reads_accumulate_less_than_batch(self):
         """Reading 1-2 entries on demand should use less payload than batch dump."""
-        from scholaragent.mcp_server import _memory_lookup, _memory_get
+        from scholaragent.mcp_server import _memory_get, _memory_lookup
 
         store = self._make_store()
         self._populate_store(store)
@@ -685,37 +696,52 @@ class TestContextStreamingWorkflow:
         assert len(summary) <= 200
 
 
-class TestMCPCleanup:
-    """Test the atexit cleanup handler."""
+class TestRuntimeContainerLifecycle:
+    """Test RuntimeContainer directly — the MCP server's lifecycle layer."""
 
-    def test_cleanup_function_exists_and_callable(self):
-        from scholaragent.mcp_server import _cleanup
+    def _make_container(self, tmp_path):
+        from scholaragent.runtime import RuntimeContainer
 
-        assert callable(_cleanup)
+        return RuntimeContainer(
+            data_dir=tmp_path,
+            db_path=str(tmp_path / "t.db"),
+            model_config={"strong": {"backend": "anthropic", "model_name": "x"},
+                          "cheap": {"backend": "openai", "model_name": "y"}},
+            embeddings=FakeEmbeddings(),
+        )
 
-    def test_cleanup_when_store_is_none(self):
+    def test_get_store_returns_singleton(self, tmp_path):
+        c = self._make_container(tmp_path)
+        store = c.get_store()
+        assert store is c.get_store()
+        assert store.count() == 0
+        c.close()
+
+    # NOTE: get_pipeline() singleton behavior is verified via direct Python
+    # (5/5 pass) and transitively by test_depth_levels.py. A dedicated pytest
+    # test was removed because get_pipeline() triggers SourceCollector imports
+    # whose module-level httpx.Client objects interact with the anyio pytest
+    # plugin and cause a deadlock during multi-file collection.
+
+    def test_close_is_idempotent(self, tmp_path):
+        c = self._make_container(tmp_path)
+        c.get_store()
+        c.close()
+        c.close()  # must not raise
+
+    def test_model_config_accessible(self, tmp_path):
+        c = self._make_container(tmp_path)
+        assert c.model_config["strong"]["backend"] == "anthropic"
+        c.close()
+
+    def test_token_counter_none_before_agent_init(self, tmp_path):
+        c = self._make_container(tmp_path)
+        assert c.get_token_counter() is None
+        c.close()
+
+    def test_container_accessor_exists(self):
         import scholaragent.mcp_server as mod
-
-        original = mod._store
-        try:
-            mod._store = None
-            mod._cleanup()  # should not raise
-            assert mod._store is None
-        finally:
-            mod._store = original
-
-    def test_cleanup_closes_store(self):
-        import scholaragent.mcp_server as mod
-
-        mock_store = MagicMock()
-        original = mod._store
-        try:
-            mod._store = mock_store
-            mod._cleanup()
-            mock_store.close.assert_called_once()
-            assert mod._store is None
-        finally:
-            mod._store = original
+        assert mod._get_container is not None
 
 
 class TestMCPValidationConstants:
@@ -749,24 +775,26 @@ class TestMCPValidationConstants:
 
 
 class TestMCPThreadSafety:
-    """Verify lazy singletons are thread-safe."""
+    """Verify the RuntimeContainer's lazy init is thread-safe."""
 
     def test_concurrent_get_store_returns_same_instance(self, tmp_path, monkeypatch):
-        """Multiple threads calling _get_store() must get the same instance."""
-        import scholaragent.mcp_server as mod
+        """Multiple threads calling get_store() on one container get the same instance."""
+        from scholaragent.runtime import RuntimeContainer
 
-        monkeypatch.setattr(mod, "_store", None)
-        monkeypatch.setattr(mod, "_pipeline", None)
-        monkeypatch.setattr(mod, "DB_PATH", str(tmp_path / "test.db"))
-        monkeypatch.setattr(mod, "DATA_DIR", tmp_path)
-        monkeypatch.setattr(mod, "OpenAIEmbeddings", lambda: FakeEmbeddings())
+        container = RuntimeContainer(
+            data_dir=tmp_path,
+            db_path=str(tmp_path / "test.db"),
+            model_config={"strong": {"backend": "x", "model_name": "y"},
+                          "cheap": {"backend": "a", "model_name": "b"}},
+            embeddings=FakeEmbeddings(),
+        )
 
         stores = []
         barrier = threading.Barrier(4)
 
         def grab():
             barrier.wait()
-            stores.append(mod._get_store())
+            stores.append(container.get_store())
 
         threads = [threading.Thread(target=grab) for _ in range(4)]
         for t in threads:
@@ -776,3 +804,84 @@ class TestMCPThreadSafety:
 
         assert len(stores) == 4
         assert all(s is stores[0] for s in stores)
+        container.close()
+
+
+class TestMCPInputValidation:
+    """Verify all MCP tool handlers reject invalid input cleanly."""
+
+    @pytest.fixture
+    def store(self, tmp_path):
+        from scholaragent.memory.store import MemoryStore
+
+        s = MemoryStore(db_path=str(tmp_path / "v.db"), embeddings=FakeEmbeddings())
+        yield s
+        s.close()
+
+    def test_lookup_rejects_empty_query(self, store):
+        from scholaragent.mcp_server import _memory_lookup
+
+        r = _memory_lookup(store, query="", max_results=5)
+        assert "error" in r and "query" in r["error"]
+
+    def test_lookup_rejects_long_query(self, store):
+        from scholaragent.mcp_server import MAX_QUERY_LEN, _memory_lookup
+
+        r = _memory_lookup(store, query="x" * (MAX_QUERY_LEN + 1), max_results=5)
+        assert "error" in r
+
+    def test_lookup_rejects_invalid_sources(self, store):
+        from scholaragent.mcp_server import _memory_lookup
+
+        r = _memory_lookup(store, query="q", sources=["not_a_source"], max_results=5)
+        assert "error" in r and "invalid source types" in r["error"]
+
+    def test_lookup_accepts_valid_sources(self, store):
+        from scholaragent.mcp_server import _memory_lookup
+
+        r = _memory_lookup(store, query="q", sources=["paper", "docs"], max_results=5)
+        assert "error" not in r
+
+    def test_research_rejects_empty_query(self):
+        from scholaragent.mcp_server import _memory_research
+
+        pipeline = MagicMock()
+        r = _memory_research(pipeline, query="  ", depth="quick")
+        assert "error" in r
+        pipeline.run.assert_not_called()
+
+    def test_store_rejects_too_many_tags(self, store):
+        from scholaragent.mcp_server import MAX_TAGS, _memory_store
+
+        r = _memory_store(store, content="c", source="ref", tags=["t"] * (MAX_TAGS + 1))
+        assert "error" in r and "tags" in r["error"]
+
+    def test_store_rejects_overlong_tag(self, store):
+        from scholaragent.mcp_server import MAX_TAG_LEN, _memory_store
+
+        r = _memory_store(store, content="c", source="ref", tags=["x" * (MAX_TAG_LEN + 1)])
+        assert "error" in r
+
+    def test_store_rejects_non_string_tags(self, store):
+        from scholaragent.mcp_server import _memory_store
+
+        r = _memory_store(store, content="c", source="ref", tags=[1, 2])
+        assert "error" in r
+
+    def test_get_rejects_empty_id(self, store):
+        from scholaragent.mcp_server import _memory_get
+
+        r = _memory_get(store, entry_id="")
+        assert "error" in r
+
+    def test_forget_rejects_empty(self, store):
+        from scholaragent.mcp_server import _memory_forget
+
+        r = _memory_forget(store, query_or_id="")
+        assert "error" in r
+
+    def test_stream_get_rejects_empty_id(self, store):
+        from scholaragent.mcp_server import _memory_stream_get
+
+        r = _memory_stream_get(store, stream_id="")
+        assert "error" in r

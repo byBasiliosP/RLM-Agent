@@ -14,6 +14,12 @@ class CriticAgent(SpecialistAgent):
     def system_prompt(self) -> str:
         return """You are a Critic agent specialized in evaluating scientific methodology.
 
+## Memory tools available in the REPL
+You have access to two memory tools:
+- memory_lookup(query, max_results=5): Search prior research. Returns list of {id, summary, source_type, source_ref, tags, score}.
+- memory_store(content, source, tags): Save a finding for future sessions.
+Always call memory_lookup(query) at the start of your task to check what is already known before doing new work.
+
 ## Input
 You receive structured paper findings from the reader agent (key_claims, methodology, results_summary, limitations) as the `context` variable.
 

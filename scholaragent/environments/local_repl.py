@@ -12,6 +12,7 @@ import functools
 import io
 import itertools
 import json
+import logging
 import math
 import re
 import statistics
@@ -20,7 +21,9 @@ import threading
 from typing import Any
 
 from scholaragent.core.comms import socket_request
-from scholaragent.environments.base import BaseEnv, REPLResult, RESERVED_NAMES
+from scholaragent.environments.base import RESERVED_NAMES, BaseEnv, REPLResult
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Safe Builtins
@@ -140,7 +143,7 @@ def _run_code(code: str, namespace: dict) -> None:
     # Python's exec() is used intentionally here - this is a REPL environment
     # designed to execute code strings from the agent. Safety is enforced via
     # the restricted builtins dict, not by avoiding exec.
-    exec(code, namespace, namespace)  # noqa: S102
+    exec(code, namespace, namespace)
 
 
 class LocalREPL(BaseEnv):
@@ -326,9 +329,6 @@ class LocalREPL(BaseEnv):
                     if key not in self.globals and not key.startswith("_"):
                         self.locals[key] = value
 
-                # Restore scaffold so model overwrites don't persist
-                self._restore_scaffold()
-
                 output = stdout_capture.getvalue()
                 return REPLResult(
                     output=output,
@@ -346,6 +346,13 @@ class LocalREPL(BaseEnv):
                     final_value=self._last_final_answer,
                 )
             finally:
+                # Restore scaffold so model overwrites don't persist across
+                # executions. Run even on exception paths; swallow any failure
+                # so it cannot mask the original error.
+                try:
+                    self._restore_scaffold()
+                except Exception:
+                    logger.exception("Scaffold restoration failed")
                 # Restore original print builtin in the globals dict
                 self.globals["__builtins__"]["print"] = print
                 self._current_print = print
@@ -365,6 +372,12 @@ class LocalREPL(BaseEnv):
                 self.globals["SHOW_PROGRESS"] = self._show_progress
             elif name == "context" and self._original_context is not None:
                 self.locals["context"] = self._original_context
+            elif name == "stream_push":
+                if hasattr(self, "_stream_push"):
+                    self.globals["stream_push"] = self._stream_push
+            elif name == "stream_read":
+                if hasattr(self, "_stream_read"):
+                    self.globals["stream_read"] = self._stream_read
 
         # Clean up any reserved names that leaked into locals from the
         # combined namespace (except 'context' which lives in locals).

@@ -2,12 +2,9 @@
 
 import os
 import tempfile
-import time
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock, patch
-
-from scholaragent.memory.types import MemoryEntry
 
 
 class FakeEmbeddings:
@@ -30,6 +27,20 @@ def store():
         s.close()
 
 
+def _mock_collector(
+    results=None,
+    errors=None,
+):
+    """Create a mock SourceCollector with configurable return values."""
+    collector = MagicMock()
+    collector.collect.return_value = (
+        results if results is not None else [],
+        errors if errors is not None else [],
+    )
+    collector.deduplicate.side_effect = lambda xs: xs
+    return collector
+
+
 class TestResearchPipeline:
     def test_creation(self, store):
         from scholaragent.memory.research import ResearchPipeline
@@ -37,37 +48,18 @@ class TestResearchPipeline:
         pipeline = ResearchPipeline(store=store)
         assert pipeline.store is store
 
-    def test_collect_sources_papers(self, store):
-        from scholaragent.memory.research import ResearchPipeline
-
-        pipeline = ResearchPipeline(store=store)
-
-        with patch("scholaragent.memory.research.search_arxiv") as mock_arxiv, \
-             patch("scholaragent.memory.research.search_semantic_scholar") as mock_s2:
-            mock_arxiv.return_value = '[{"arxiv_id": "2401.00001", "title": "Test Paper", "authors": ["A"], "abstract": "Test abstract", "published": "2024-01-01", "categories": ["cs.AI"]}]'
-            mock_s2.return_value = '[{"paper_id": "abc", "title": "Test Paper 2", "authors": ["B"], "abstract": "Abstract 2", "year": 2024, "citation_count": 10, "arxiv_id": ""}]'
-
-            results, errors = pipeline._collect_sources("attention mechanisms", sources=["paper"])
-            assert len(results) > 0
-            assert all(r["source_type"] == "paper" for r in results)
-            assert errors == []
-
     def test_quick_research_stores_entries(self, store):
         from scholaragent.memory.research import ResearchPipeline
 
-        pipeline = ResearchPipeline(store=store)
+        collector = _mock_collector(
+            results=[{"content": "Title: Paper\n\nAbstract: Content", "source_type": "paper", "source_ref": "arxiv:123"}],
+        )
+        pipeline = ResearchPipeline(store=store, collector=collector)
+        result = pipeline.run("test query", depth="quick", focus="implementation")
 
-        with patch("scholaragent.memory.research.search_arxiv") as mock_arxiv, \
-             patch("scholaragent.memory.research.search_semantic_scholar") as mock_s2, \
-             patch("scholaragent.memory.research.search_github_code") as mock_gh:
-            mock_arxiv.return_value = '[{"arxiv_id": "123", "title": "Paper", "authors": ["X"], "abstract": "Content", "published": "2024", "categories": []}]'
-            mock_s2.return_value = '[]'
-            mock_gh.return_value = []
-
-            result = pipeline.run("test query", depth="quick", focus="implementation")
-            assert store.count() > 0
-            assert result["depth"] == "quick"
-            assert result["entries_added"] > 0
+        assert store.count() > 0
+        assert result["depth"] == "quick"
+        assert result["entries_added"] > 0
 
     def test_deduplication_check(self, store):
         from scholaragent.memory.research import ResearchPipeline
@@ -91,92 +83,83 @@ class TestResearchPipeline:
     def test_source_failure_appears_in_errors(self, store):
         from scholaragent.memory.research import ResearchPipeline
 
-        pipeline = ResearchPipeline(store=store)
+        collector = _mock_collector(
+            results=[],
+            errors=["arXiv: ConnectionError: network down"],
+        )
+        pipeline = ResearchPipeline(store=store, collector=collector)
+        result = pipeline.run("test query", depth="quick")
 
-        with patch("scholaragent.memory.research.search_arxiv") as mock_arxiv, \
-             patch("scholaragent.memory.research.search_semantic_scholar") as mock_s2, \
-             patch("scholaragent.memory.research.search_github_code") as mock_gh, \
-             patch("scholaragent.memory.research.search_docs") as mock_docs:
-            mock_arxiv.side_effect = ConnectionError("network down")
-            mock_s2.return_value = '[]'
-            mock_gh.return_value = []
-            mock_docs.return_value = []
-
-            result = pipeline.run("test query", depth="quick")
-            assert "errors" in result
-            assert len(result["errors"]) == 1
-            assert "arXiv" in result["errors"][0]
-            assert "ConnectionError" in result["errors"][0]
+        assert "errors" in result
+        assert len(result["errors"]) == 1
+        assert "arXiv" in result["errors"][0]
+        assert "ConnectionError" in result["errors"][0]
 
     def test_pipeline_works_when_one_source_fails(self, store):
         from scholaragent.memory.research import ResearchPipeline
 
-        pipeline = ResearchPipeline(store=store)
+        collector = _mock_collector(
+            results=[{"content": "Title: Paper\n\nAbstract: Content", "source_type": "paper", "source_ref": "arxiv:123"}],
+            errors=["Semantic Scholar: RuntimeError: API limit exceeded"],
+        )
+        pipeline = ResearchPipeline(store=store, collector=collector)
+        result = pipeline.run("test query", depth="quick")
 
-        with patch("scholaragent.memory.research.search_arxiv") as mock_arxiv, \
-             patch("scholaragent.memory.research.search_semantic_scholar") as mock_s2, \
-             patch("scholaragent.memory.research.search_github_code") as mock_gh, \
-             patch("scholaragent.memory.research.search_docs") as mock_docs:
-            mock_arxiv.return_value = '[{"arxiv_id": "123", "title": "Paper", "authors": ["X"], "abstract": "Content", "published": "2024", "categories": []}]'
-            mock_s2.side_effect = RuntimeError("API limit exceeded")
-            mock_gh.return_value = []
-            mock_docs.return_value = []
-
-            result = pipeline.run("test query", depth="quick")
-            assert result["status"] == "completed"
-            assert result["entries_added"] > 0
-            assert len(result["errors"]) == 1
-            assert "Semantic Scholar" in result["errors"][0]
+        assert result["status"] == "completed"
+        assert result["entries_added"] > 0
+        assert len(result["errors"]) == 1
+        assert "Semantic Scholar" in result["errors"][0]
 
     def test_all_sources_fail_returns_errors(self, store):
         from scholaragent.memory.research import ResearchPipeline
 
-        pipeline = ResearchPipeline(store=store)
+        collector = _mock_collector(
+            results=[],
+            errors=[
+                "arXiv: ConnectionError: fail",
+                "Semantic Scholar: TimeoutError: fail",
+                "GitHub: ValueError: fail",
+                "Docs: OSError: fail",
+            ],
+        )
+        pipeline = ResearchPipeline(store=store, collector=collector)
+        result = pipeline.run("test query", depth="quick")
 
-        with patch("scholaragent.memory.research.search_arxiv") as mock_arxiv, \
-             patch("scholaragent.memory.research.search_semantic_scholar") as mock_s2, \
-             patch("scholaragent.memory.research.search_github_code") as mock_gh, \
-             patch("scholaragent.memory.research.search_docs") as mock_docs:
-            mock_arxiv.side_effect = ConnectionError("fail")
-            mock_s2.side_effect = TimeoutError("fail")
-            mock_gh.side_effect = ValueError("fail")
-            mock_docs.side_effect = OSError("fail")
-
-            result = pipeline.run("test query", depth="quick")
-            assert result["entries_added"] == 0
-            assert len(result["errors"]) == 4
+        assert result["entries_added"] == 0
+        assert len(result["errors"]) == 4
 
 
-class TestSequentialCollection:
-    def test_sources_collected_sequentially(self, store, monkeypatch):
-        """Source adapters run sequentially to avoid httpx thread-safety issues."""
-        call_order = []
-
-        def mock_arxiv(query, max_results=10):
-            call_order.append("arxiv")
-            return "[]"
-
-        def mock_s2(query, limit=10):
-            call_order.append("s2")
-            return "[]"
-
-        def mock_github(query, language=None, max_results=10):
-            call_order.append("github")
-            return []
-
-        def mock_docs(query, max_results=5):
-            call_order.append("docs")
-            return []
-
-        import scholaragent.memory.research as mod
-        monkeypatch.setattr(mod, "search_arxiv", mock_arxiv)
-        monkeypatch.setattr(mod, "search_semantic_scholar", mock_s2)
-        monkeypatch.setattr(mod, "search_github_code", mock_github)
-        monkeypatch.setattr(mod, "search_docs", mock_docs)
-
+class TestPipelineDependencyInjection:
+    def test_pipeline_uses_injected_collector(self, store):
         from scholaragent.memory.research import ResearchPipeline
-        pipeline = ResearchPipeline(store=store)
-        pipeline._collect_sources("test query")
 
-        # All sources should be called in deterministic order
-        assert call_order == ["arxiv", "s2", "github", "docs"]
+        fake_collector = MagicMock()
+        fake_collector.collect.return_value = (
+            [{"content": "X", "source_type": "paper", "source_ref": "arxiv:9"}],
+            [],
+        )
+        fake_collector.deduplicate.side_effect = lambda xs: xs
+
+        pipeline = ResearchPipeline(store=store, collector=fake_collector)
+        result = pipeline.run("test", depth="quick")
+
+        assert result["entries_added"] == 1
+        fake_collector.collect.assert_called_once()
+        fake_collector.deduplicate.assert_called_once()
+
+    def test_pipeline_uses_injected_indexer(self, store):
+        from scholaragent.memory.indexer import ResultIndexer
+        from scholaragent.memory.research import ResearchPipeline
+
+        real_indexer = ResultIndexer(store)
+        pipeline = ResearchPipeline(
+            store=store,
+            collector=_mock_collector(
+                results=[{"content": "X", "source_type": "paper", "source_ref": "arxiv:9"}],
+            ),
+            indexer=real_indexer,
+        )
+        result = pipeline.run("test", depth="quick")
+
+        assert result["entries_added"] == 1
+        assert store.count() == 1

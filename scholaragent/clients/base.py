@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from scholaragent.core.types import ModelUsageSummary, UsageSummary
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from scholaragent.clients.rate_limiter import RateLimiter

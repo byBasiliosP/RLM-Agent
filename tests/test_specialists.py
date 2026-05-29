@@ -2,14 +2,13 @@
 
 import pytest
 
+from scholaragent.agents.analyst import AnalystAgent
+from scholaragent.agents.critic import CriticAgent
+from scholaragent.agents.reader import ReaderAgent
+from scholaragent.agents.scout import ScoutAgent
+from scholaragent.agents.synthesizer import SynthesizerAgent
 from scholaragent.core.agent import SpecialistAgent
 from scholaragent.core.registry import AgentRegistry
-
-from scholaragent.agents.scout import ScoutAgent
-from scholaragent.agents.reader import ReaderAgent
-from scholaragent.agents.critic import CriticAgent
-from scholaragent.agents.analyst import AnalystAgent
-from scholaragent.agents.synthesizer import SynthesizerAgent
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -152,6 +151,37 @@ class TestSynthesizerAgent:
 
     def test_tools_empty(self, synthesizer):
         assert synthesizer.get_tools() == {}
+
+
+# ---------------------------------------------------------------------------
+# LinterAgent tests
+# ---------------------------------------------------------------------------
+
+from scholaragent.agents.linter import LinterAgent
+
+
+@pytest.fixture
+def linter():
+    return LinterAgent()
+
+class TestLinterAgent:
+    def test_is_specialist(self, linter):
+        assert isinstance(linter, SpecialistAgent)
+
+    def test_name(self, linter):
+        assert linter.name == "linter"
+
+    def test_system_prompt_keywords(self, linter):
+        prompt = linter.system_prompt
+        assert "static analysis" in prompt.lower()
+        assert "FINAL" in prompt
+        assert "stream_push" in prompt
+
+    def test_tools(self, linter):
+        tools = linter.get_tools()
+        assert "detect_framework" in tools
+        assert "run_linter" in tools
+        assert all(callable(v) for v in tools.values())
 
 
 # ---------------------------------------------------------------------------

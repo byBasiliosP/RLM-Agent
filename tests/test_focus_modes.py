@@ -2,12 +2,12 @@
 
 import os
 import tempfile
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock, call
 
-from scholaragent.memory.research import ResearchPipeline, FOCUS_HINTS
 from scholaragent.core.types import AgentResult
+from scholaragent.memory.research import FOCUS_HINTS, ResearchPipeline
 
 
 class FakeEmbeddings:
@@ -70,7 +70,7 @@ class TestFocusHints:
 
         from unittest.mock import patch
         with patch.multiple(
-            "scholaragent.memory.research",
+            "scholaragent.memory.source_collector",
             search_arxiv=MagicMock(return_value='[]'),
             search_semantic_scholar=MagicMock(return_value='[]'),
             search_github_code=MagicMock(return_value=[]),

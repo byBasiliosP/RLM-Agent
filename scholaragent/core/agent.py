@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from scholaragent.core.handler import LMHandler
 from scholaragent.core.types import AgentResult
@@ -19,6 +19,8 @@ from scholaragent.environments.local_repl import LocalREPL
 from scholaragent.utils.parsing import find_code_blocks, find_final_answer, format_iteration_output
 
 if TYPE_CHECKING:
+    from scholaragent.core.context import ContextStream
+    from scholaragent.memory.store import MemoryStore
     from scholaragent.utils.budget import Budget
 
 
@@ -41,6 +43,43 @@ class SpecialistAgent(ABC):
         """Return custom tools for this agent's REPL. Override in subclasses."""
         return {}
 
+    @staticmethod
+    def memory_tools(store: MemoryStore) -> dict[str, Any]:
+        """Return memory_lookup and memory_store callables bound to *store*.
+
+        These are injected as REPL globals so agents can call them directly:
+            prior = memory_lookup("rlhf techniques", max_results=3)
+            memory_store("key finding", "arxiv:2401.12345", ["rlhf"])
+        """
+        from scholaragent.memory.types import MemoryEntry
+
+        def memory_lookup(query: str, max_results: int = 5) -> list[dict]:
+            """Search prior research. Returns list of compact dicts with score."""
+            results = store.search(query, max_results=max_results)
+            return [
+                {**entry.to_compact_dict(), "score": round(score, 3)}
+                for entry, score in results
+            ]
+
+        def memory_store(content: str, source: str, tags: list[str]) -> str:
+            """Save a finding to memory for future sessions."""
+            source_type = "docs"
+            if source.startswith("arxiv:") or source.startswith("s2:"):
+                source_type = "paper"
+            elif source.startswith("github:") or source.startswith("https://github.com/"):
+                source_type = "code"
+            entry = MemoryEntry(
+                content=content,
+                summary=MemoryEntry.smart_summary(content),
+                source_type=source_type,
+                source_ref=source,
+                tags=tags,
+            )
+            store.add(entry)
+            return f"stored:{entry.id}"
+
+        return {"memory_lookup": memory_lookup, "memory_store": memory_store}
+
     def run(
         self,
         task: str,
@@ -49,6 +88,8 @@ class SpecialistAgent(ABC):
         agent_call_fn: Callable | None = None,
         verbose: bool = False,
         budget: Budget | None = None,
+        store: MemoryStore | None = None,
+        stream: ContextStream | None = None,
     ) -> AgentResult:
         """Run the agent's REPL loop.
 
@@ -66,6 +107,8 @@ class SpecialistAgent(ABC):
         # Create REPL with agent's tools.
         # Do NOT pass call_agent as a custom_tool (it's in RESERVED_NAMES).
         custom_tools = self.get_tools()
+        if store is not None:
+            custom_tools = {**custom_tools, **self.memory_tools(store)}
         repl = LocalREPL(handler_address=handler.address, custom_tools=custom_tools)
 
         # If an agent_call_fn was provided, inject it directly into the REPL
@@ -73,6 +116,20 @@ class SpecialistAgent(ABC):
         if agent_call_fn is not None:
             repl.globals["call_agent"] = agent_call_fn
             repl._call_agent = agent_call_fn  # so _restore_scaffold preserves it
+
+        # Inject stream functions if a ContextStream is provided
+        if stream is not None:
+            def _stream_push(event_type: str, data: dict) -> str:
+                stream.push(self.name, event_type, data)
+                return f"pushed:{event_type}"
+
+            def _stream_read(agent: str | None = None) -> dict:
+                return stream.read(agent=agent)
+
+            repl.globals["stream_push"] = _stream_push
+            repl.globals["stream_read"] = _stream_read
+            repl._stream_push = _stream_push
+            repl._stream_read = _stream_read
 
         repl.load_context(task)
 
@@ -93,6 +150,8 @@ class SpecialistAgent(ABC):
             if budget is not None:
                 budget.use_iteration()
                 if budget.is_exhausted:
+                    if stream is not None:
+                        stream.commit(self.name, messages)
                     return AgentResult(
                         agent_name=self.name,
                         task=task,
@@ -113,6 +172,8 @@ class SpecialistAgent(ABC):
             # Check for inline FINAL()
             final_answer = find_final_answer(llm_response)
             if final_answer:
+                if stream is not None:
+                    stream.commit(self.name, messages)
                 return AgentResult(
                     agent_name=self.name,
                     task=task,
@@ -137,6 +198,8 @@ class SpecialistAgent(ABC):
                     final_value = result.final_value
 
             if has_final and final_value is not None:
+                if stream is not None:
+                    stream.commit(self.name, messages)
                 return AgentResult(
                     agent_name=self.name,
                     task=task,
@@ -159,6 +222,8 @@ class SpecialistAgent(ABC):
                 )
 
         # Max iterations reached
+        if stream is not None:
+            stream.commit(self.name, messages)
         return AgentResult(
             agent_name=self.name,
             task=task,

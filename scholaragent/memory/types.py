@@ -1,9 +1,11 @@
 """Data types for the memory layer."""
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
-VALID_SOURCE_TYPES: frozenset[str] = frozenset({"paper", "docs", "code"})
+VALID_SOURCE_TYPES: frozenset[str] = frozenset(
+    {"paper", "docs", "code", "synthesized_report"}
+)
 
 
 @dataclass
@@ -15,7 +17,7 @@ class MemoryEntry:
     tags: list[str]
     id: str = field(default_factory=lambda: str(uuid4()))
     embedding: list[float] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     access_count: int = 0
 
     def __post_init__(self):
@@ -80,7 +82,7 @@ class ResearchLogEntry:
     focus: str
     result_count: int
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict:
         return {

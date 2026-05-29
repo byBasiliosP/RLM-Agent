@@ -1,15 +1,14 @@
 """Tests for SpecialistAgent and AgentRegistry."""
 
-import pytest
 from abc import ABC
 
-from scholaragent.core.agent import SpecialistAgent
-from scholaragent.core.registry import AgentRegistry
-from scholaragent.core.types import AgentResult
-from scholaragent.core.handler import LMHandler
-from scholaragent.clients.base import BaseLM
-from scholaragent.core.types import ModelUsageSummary, UsageSummary
+import pytest
 
+from scholaragent.clients.base import BaseLM
+from scholaragent.core.agent import SpecialistAgent
+from scholaragent.core.handler import LMHandler
+from scholaragent.core.registry import AgentRegistry
+from scholaragent.core.types import AgentResult, ModelUsageSummary, UsageSummary
 
 # ---- Helpers ----------------------------------------------------------------
 
