@@ -8,6 +8,7 @@ via a save callback.
 
 from __future__ import annotations
 
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -153,6 +154,8 @@ class ContextStream:
     on_save: Callable[[ContextStream], None] | None = field(default=None, repr=False)
     flush_every: int = field(default_factory=_default_flush_every, repr=False)
     _pending_pushes: int = field(default=0, repr=False)
+    # Reentrant so on_save callbacks that touch the stream don't self-deadlock.
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     def push(self, agent: str, event_type: str, data: dict) -> None:
         """Record an incremental update from an agent mid-execution.
@@ -160,62 +163,71 @@ class ContextStream:
         Saves to `on_save` only every `flush_every` pushes to avoid a DB
         write on every event. Callers that need guaranteed durability
         should call `flush()` at commit/shutdown points.
+
+        Thread-safe: parallel Reader/Critic workers share one stream.
         """
         event = StreamEvent(agent=agent, event_type=event_type, data=data)
-        self.events.append(event)
-        self.updated_at = datetime.now(UTC).isoformat()
+        with self._lock:
+            self.events.append(event)
+            self.updated_at = datetime.now(UTC).isoformat()
 
-        updater = _STATE_UPDATERS.get(event_type)
-        if updater is not None:
-            updater(self.state, data)
+            updater = _STATE_UPDATERS.get(event_type)
+            if updater is not None:
+                updater(self.state, data)
 
-        self._pending_pushes += 1
-        if self.on_save is not None and self._pending_pushes >= self.flush_every:
-            self.on_save(self)
-            self._pending_pushes = 0
+            self._pending_pushes += 1
+            should_save = (
+                self.on_save is not None and self._pending_pushes >= self.flush_every
+            )
+            if should_save:
+                self.on_save(self)
+                self._pending_pushes = 0
 
     def commit(self, agent: str, messages: list[dict]) -> None:
         """Save an agent's conversation trace as a final snapshot.
 
         Always flushes pending pushes along with the trace update.
         """
-        self.traces[agent] = messages
-        self.updated_at = datetime.now(UTC).isoformat()
-
-        if self.on_save is not None:
-            self.on_save(self)
-            self._pending_pushes = 0
+        with self._lock:
+            self.traces[agent] = messages
+            self.updated_at = datetime.now(UTC).isoformat()
+            if self.on_save is not None:
+                self.on_save(self)
+                self._pending_pushes = 0
 
     def flush(self) -> None:
         """Force-save any pending pushes. No-op if clean or no callback."""
-        if self.on_save is not None and self._pending_pushes > 0:
-            self.on_save(self)
-            self._pending_pushes = 0
+        with self._lock:
+            if self.on_save is not None and self._pending_pushes > 0:
+                self.on_save(self)
+                self._pending_pushes = 0
 
     def read(self, agent: str | None = None) -> dict:
         """Read stream data, optionally filtered to a single agent."""
-        if agent is None:
+        with self._lock:
+            if agent is None:
+                return {
+                    "state": self.state.to_dict(),
+                    "traces": dict(self.traces),
+                    "events": [e.to_dict() for e in self.events],
+                }
             return {
+                "state": self.state.to_dict(),
+                "traces": {k: v for k, v in self.traces.items() if k == agent},
+                "events": [e.to_dict() for e in self.events if e.agent == agent],
+            }
+
+    def to_dict(self) -> dict:
+        with self._lock:
+            return {
+                "id": self.id,
+                "query": self.query,
+                "created_at": self.created_at,
+                "updated_at": self.updated_at,
                 "state": self.state.to_dict(),
                 "traces": dict(self.traces),
                 "events": [e.to_dict() for e in self.events],
             }
-        return {
-            "state": self.state.to_dict(),
-            "traces": {k: v for k, v in self.traces.items() if k == agent},
-            "events": [e.to_dict() for e in self.events if e.agent == agent],
-        }
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "query": self.query,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "state": self.state.to_dict(),
-            "traces": dict(self.traces),
-            "events": [e.to_dict() for e in self.events],
-        }
 
     @classmethod
     def from_dict(cls, d: dict) -> ContextStream:
