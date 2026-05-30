@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 MAX_SUMMARY_LENGTH = 200
 
+_DEPTH_RANK = {"quick": 1, "normal": 2, "deep": 3}
+
 FOCUS_HINTS = {
     "implementation": "Focus on code examples, API usage, how-to guides, and practical patterns.",
     "theory": "Focus on concepts, algorithms, mathematical foundations, and trade-offs.",
@@ -93,9 +95,11 @@ class ResearchPipeline:
 
         Returns dict with metadata about what was found and stored.
         """
-        # Check deduplication
+        # Check deduplication — only reuse cache if the prior run was at
+        # the same or deeper depth AND the same focus. A previous quick
+        # run must NOT block a fresh deep request.
         if not force:
-            recent = self._check_dedup(query)
+            recent = self._check_dedup(query, depth=depth, focus=focus)
             if recent is not None:
                 return ResearchResult(
                     status="cached",
@@ -314,9 +318,25 @@ class ResearchPipeline:
 
         return enriched_papers + non_papers
 
-    def _check_dedup(self, query: str) -> ResearchLogEntry | None:
-        """Check if similar research was done recently."""
+    def _check_dedup(
+        self,
+        query: str,
+        depth: str = "normal",
+        focus: str = "implementation",
+    ) -> ResearchLogEntry | None:
+        """Return a recent log entry that is at least as good as the request.
+
+        "At least as good" means same focus AND the stored depth is >= the
+        requested depth. quick=1 < normal=2 < deep=3. So a previous deep
+        run can satisfy a quick request, but not the reverse.
+        """
         recent = self.store.get_recent_research(query, days=7)
-        if recent:
-            return recent[0]
+        if not recent:
+            return None
+        requested_rank = _DEPTH_RANK.get(depth, 0)
+        requested_focus = focus
+        for entry in recent:
+            entry_rank = _DEPTH_RANK.get(entry.depth, 0)
+            if entry.focus == requested_focus and entry_rank >= requested_rank:
+                return entry
         return None

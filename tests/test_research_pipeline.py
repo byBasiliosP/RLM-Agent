@@ -66,11 +66,9 @@ class TestResearchPipeline:
 
         pipeline = ResearchPipeline(store=store)
 
-        # Log a recent research
+        # Log a recent research at the same depth + focus as the request
         store.log_research("RLHF techniques", "normal", "theory", 5)
-
-        # Check dedup
-        recent = pipeline._check_dedup("RLHF techniques")
+        recent = pipeline._check_dedup("RLHF techniques", depth="normal", focus="theory")
         assert recent is not None
 
     def test_no_dedup_for_new_query(self, store):
@@ -78,6 +76,37 @@ class TestResearchPipeline:
 
         pipeline = ResearchPipeline(store=store)
         recent = pipeline._check_dedup("completely new topic")
+        assert recent is None
+
+    def test_quick_cache_does_not_block_deep_request(self, store):
+        """A previous quick run must NOT satisfy a fresh deep request."""
+        from scholaragent.memory.research import ResearchPipeline
+
+        pipeline = ResearchPipeline(store=store)
+        store.log_research("attention mechanisms", "quick", "implementation", 3)
+        recent = pipeline._check_dedup(
+            "attention mechanisms", depth="deep", focus="implementation"
+        )
+        assert recent is None
+
+    def test_deep_cache_satisfies_quick_request(self, store):
+        """A previous deep run IS good enough for a quick request."""
+        from scholaragent.memory.research import ResearchPipeline
+
+        pipeline = ResearchPipeline(store=store)
+        store.log_research("attention mechanisms", "deep", "implementation", 8)
+        recent = pipeline._check_dedup(
+            "attention mechanisms", depth="quick", focus="implementation"
+        )
+        assert recent is not None
+        assert recent.depth == "deep"
+
+    def test_focus_mismatch_does_not_dedup(self, store):
+        from scholaragent.memory.research import ResearchPipeline
+
+        pipeline = ResearchPipeline(store=store)
+        store.log_research("topic x", "deep", "theory", 5)
+        recent = pipeline._check_dedup("topic x", depth="quick", focus="implementation")
         assert recent is None
 
     def test_source_failure_appears_in_errors(self, store):
