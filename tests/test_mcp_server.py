@@ -743,6 +743,31 @@ class TestRuntimeContainerLifecycle:
         import scholaragent.mcp_server as mod
         assert mod._get_container is not None
 
+    def test_get_pipeline_first_does_not_deadlock(self, tmp_path):
+        """Regression: get_pipeline() before get_store() must not deadlock.
+
+        The init lock is non-reentrant, so the previous nested
+        get_store() call from inside get_pipeline() would hang forever
+        on the first MCP `memory_research` call after startup.
+        """
+        import threading
+
+        c = self._make_container(tmp_path)
+        done = threading.Event()
+        pipeline_ref: list = []
+
+        def grab():
+            pipeline_ref.append(c.get_pipeline())
+            done.set()
+
+        t = threading.Thread(target=grab, daemon=True)
+        t.start()
+        assert done.wait(timeout=3.0), "get_pipeline() deadlocked"
+        assert pipeline_ref[0] is not None
+        # Confirms the store was also initialized via this path
+        assert c.get_store() is not None
+        c.close()
+
 
 class TestMCPValidationConstants:
     """Test that validation constants are properly defined."""

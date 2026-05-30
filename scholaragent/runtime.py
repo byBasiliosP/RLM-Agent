@@ -67,10 +67,13 @@ class RuntimeContainer:
     def get_pipeline(self) -> ResearchPipeline:
         if self._pipeline is not None:
             return self._pipeline
+        # Initialize the store first OUTSIDE the lock to avoid a deadlock
+        # (get_store() acquires the same non-reentrant lock).
+        store = self.get_store()
         with self._init_lock:
             if self._pipeline is not None:
                 return self._pipeline
-            self._pipeline = ResearchPipeline(store=self.get_store())
+            self._pipeline = ResearchPipeline(store=store)
             return self._pipeline
 
     def get_agent_infra(self) -> tuple:
