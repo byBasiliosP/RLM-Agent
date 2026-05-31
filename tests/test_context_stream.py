@@ -246,11 +246,12 @@ class TestContextStreamThreadSafety:
         for t in threads:
             t.join()
 
-        # 100 pushes / flush_every=5 == 20 push-triggered saves,
-        # plus 5 commit saves = 25 saves expected. Locking guarantees
-        # no lost increments; exact count is deterministic under the lock.
-        assert save_count["n"] >= 5  # commits always save
-        # All 5 traces should be present (no lost commits)
+        # The total save count is NOT deterministic: a committer reset
+        # of _pending_pushes can interleave with pushers and absorb a
+        # batch that would otherwise have triggered its own save. What
+        # IS guaranteed: every commit() saves at least once, and no
+        # commit gets lost under concurrency.
+        assert save_count["n"] >= 5
         assert len(stream.traces) == 5
 
 
