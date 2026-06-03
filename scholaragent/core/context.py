@@ -196,12 +196,16 @@ class ContextStream:
         concurrent push/read.
         """
         should_save = False
+        should_save = False
         with self._lock:
             self.traces[agent] = messages
             self.updated_at = datetime.now(UTC).isoformat()
             if self.on_save is not None:
                 should_save = True
                 self._pending_pushes = 0
+
+        if should_save and self.on_save is not None:
+            self.on_save(self)
 
         if should_save and self.on_save is not None:
             self.on_save(self)
