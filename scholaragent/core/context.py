@@ -217,10 +217,14 @@ class ContextStream:
         blocked on DB I/O.
         """
         should_save = False
+        should_save = False
         with self._lock:
             if self.on_save is not None and self._pending_pushes > 0:
                 should_save = True
                 self._pending_pushes = 0
+
+        if should_save and self.on_save is not None:
+            self.on_save(self)
 
         if should_save and self.on_save is not None:
             self.on_save(self)
