@@ -167,6 +167,9 @@ class ContextStream:
         Thread-safe: parallel Reader/Critic workers share one stream.
         The `on_save` callback is invoked OUTSIDE the lock so a slow DB
         write doesn't block other workers from pushing or reading.
+        """
+        event = StreamEvent(agent=agent, event_type=event_type, data=data)
+        should_save = False
         with self._lock:
             self.events.append(event)
             self.updated_at = datetime.now(UTC).isoformat()
@@ -176,14 +179,9 @@ class ContextStream:
                 updater(self.state, data)
 
             self._pending_pushes += 1
-            should_save = (
-                self.on_save is not None and self._pending_pushes >= self.flush_every
-            )
-            if should_save:
+            if self.on_save is not None and self._pending_pushes >= self.flush_every:
+                should_save = True
                 self._pending_pushes = 0
-
-        if should_save and self.on_save is not None:
-            self.on_save(self)
 
         if should_save and self.on_save is not None:
             self.on_save(self)
@@ -196,16 +194,12 @@ class ContextStream:
         concurrent push/read.
         """
         should_save = False
-        should_save = False
         with self._lock:
             self.traces[agent] = messages
             self.updated_at = datetime.now(UTC).isoformat()
             if self.on_save is not None:
                 should_save = True
                 self._pending_pushes = 0
-
-        if should_save and self.on_save is not None:
-            self.on_save(self)
 
         if should_save and self.on_save is not None:
             self.on_save(self)
@@ -217,14 +211,10 @@ class ContextStream:
         blocked on DB I/O.
         """
         should_save = False
-        should_save = False
         with self._lock:
             if self.on_save is not None and self._pending_pushes > 0:
                 should_save = True
                 self._pending_pushes = 0
-
-        if should_save and self.on_save is not None:
-            self.on_save(self)
 
         if should_save and self.on_save is not None:
             self.on_save(self)
