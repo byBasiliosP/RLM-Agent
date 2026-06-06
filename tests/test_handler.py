@@ -124,6 +124,48 @@ class TestLMHandler:
         assert handler._server is None
 
 
+class TestLMHandlerRoleRouting:
+    """Verify cheap/strong routing actually selects the registered cheap client."""
+
+    def test_role_resolves_to_registered_client(self):
+        strong = FakeLM("strong")
+        cheap = FakeLM("cheap")
+        handler = LMHandler(strong)
+        handler.register_client("cheap", cheap)
+        handler.register_role("scout", "cheap")
+
+        # No role -> default (strong)
+        assert handler.get_client(handler._resolve_model(None, None)) is strong
+        # role="scout" -> cheap
+        assert handler.get_client(handler._resolve_model(None, "scout")) is cheap
+
+    def test_completion_messages_routes_by_role(self):
+        class TaggingLM(FakeLM):
+            def completion_messages(self, messages):
+                return f"{self.model_name}:{messages[-1]['content']}"
+
+        strong = TaggingLM("strong")
+        cheap = TaggingLM("cheap")
+        handler = LMHandler(strong)
+        handler.register_client("cheap", cheap)
+        handler.register_role("scout", "cheap")
+
+        msgs = [{"role": "user", "content": "hi"}]
+        assert handler.completion_messages(msgs).startswith("strong:")
+        assert handler.completion_messages(msgs, role="scout").startswith("cheap:")
+        assert handler.completion_messages(msgs, role="reader").startswith("strong:")
+
+    def test_explicit_model_overrides_role(self):
+        strong = FakeLM("strong")
+        cheap = FakeLM("cheap")
+        handler = LMHandler(strong)
+        handler.register_client("cheap", cheap)
+        handler.register_role("scout", "cheap")
+        # Explicit model wins over role mapping
+        resolved = handler._resolve_model("strong", "scout")
+        assert resolved == "strong"
+
+
 # ---------------------------------------------------------------------------
 # Full round-trip integration test
 # ---------------------------------------------------------------------------

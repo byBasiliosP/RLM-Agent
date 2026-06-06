@@ -187,6 +187,74 @@ class TestContextStream:
         assert len(saved) == 1
 
 
+class TestContextStreamThreadSafety:
+    """Parallel Reader/Critic workers share one stream — pushes must not race."""
+
+    def test_concurrent_pushes_record_all_events(self):
+        import threading
+
+        stream = ContextStream(query="parallel", flush_every=10_000)
+        errors = []
+
+        def hammer(agent, n):
+            try:
+                for i in range(n):
+                    stream.push(agent, "papers_found", {"papers": [{"i": i}]})
+            except Exception as e:  # pragma: no cover - failure path
+                errors.append(e)
+
+        threads = [
+            threading.Thread(target=hammer, args=(f"reader-{k}", 100))
+            for k in range(4)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == []
+        # No lost events: 4 workers * 100 pushes
+        assert len(stream.events) == 400
+        # PipelineState.papers was extended 400 times by 1 paper each
+        assert len(stream.state.papers) == 400
+
+    def test_concurrent_commit_and_push_consistent_saves(self):
+        import threading
+
+        save_count = {"n": 0}
+
+        def on_save(s):
+            save_count["n"] += 1
+
+        stream = ContextStream(query="x", on_save=on_save, flush_every=5)
+
+        def pusher():
+            for _ in range(50):
+                stream.push("reader", "papers_found", {"papers": []})
+
+        def committer():
+            for i in range(5):
+                stream.commit(f"agent-{i}", [{"role": "user", "content": str(i)}])
+
+        threads = [
+            threading.Thread(target=pusher),
+            threading.Thread(target=pusher),
+            threading.Thread(target=committer),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # The total save count is NOT deterministic: a committer reset
+        # of _pending_pushes can interleave with pushers and absorb a
+        # batch that would otherwise have triggered its own save. What
+        # IS guaranteed: every commit() saves at least once, and no
+        # commit gets lost under concurrency.
+        assert save_count["n"] >= 5
+        assert len(stream.traces) == 5
+
+
 from scholaragent.memory.store import MemoryStore
 from tests.helpers import FakeEmbeddings
 

@@ -67,10 +67,13 @@ class RuntimeContainer:
     def get_pipeline(self) -> ResearchPipeline:
         if self._pipeline is not None:
             return self._pipeline
+        # Initialize the store first OUTSIDE the lock to avoid a deadlock
+        # (get_store() acquires the same non-reentrant lock).
+        store = self.get_store()
         with self._init_lock:
             if self._pipeline is not None:
                 return self._pipeline
-            self._pipeline = ResearchPipeline(store=self.get_store())
+            self._pipeline = ResearchPipeline(store=store)
             return self._pipeline
 
     def get_agent_infra(self) -> tuple:
@@ -112,6 +115,12 @@ class RuntimeContainer:
             )
             cheap_client = router.get_client("scout")
             handler.register_client(cheap_client.model_name, cheap_client)
+            # Tell the handler which agents go on the cheap model so
+            # SpecialistAgent.run(role=self.name) routes correctly.
+            from scholaragent.clients.router import CHEAP_ROLES
+
+            for role in CHEAP_ROLES:
+                handler.register_role(role, cheap_client.model_name)
             handler.start()
 
             registry = AgentRegistry()

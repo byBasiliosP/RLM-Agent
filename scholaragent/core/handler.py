@@ -80,6 +80,10 @@ class LMHandler:
         self.token_counter = token_counter
         self.verbose = verbose
         self.cache = cache
+        # Maps agent role (e.g. "scout") to a registered model name so
+        # cheap/strong routing applies even when callers don't know the
+        # underlying model.
+        self.role_to_model: dict[str, str] = {}
 
     # ----- client registry ---------------------------------------------------
 
@@ -87,11 +91,25 @@ class LMHandler:
         """Register a client for a specific model name."""
         self.clients[model_name] = client
 
+    def register_role(self, role: str, model_name: str) -> None:
+        """Bind an agent role to a registered model name.
+
+        After this, callers can pass ``role=`` to completion_messages /
+        completion and get the right client without knowing the model.
+        """
+        self.role_to_model[role] = model_name
+
     def get_client(self, model: str | None = None) -> BaseLM:
         """Return the client for *model*, falling back to the default."""
         if model and model in self.clients:
             return self.clients[model]
         return self.default_client
+
+    def _resolve_model(self, model: str | None, role: str | None) -> str | None:
+        """Resolve role -> model when no explicit model was given."""
+        if model is None and role is not None:
+            return self.role_to_model.get(role)
+        return model
 
     # ----- address helpers ---------------------------------------------------
 
@@ -129,16 +147,23 @@ class LMHandler:
 
     # ----- direct completion -------------------------------------------------
 
-    def completion(self, prompt: str, model: str | None = None) -> str:
+    def completion(
+        self, prompt: str, model: str | None = None, role: str | None = None
+    ) -> str:
         """Direct (in-process) completion call."""
-        client = self.get_client(model)
+        client = self.get_client(self._resolve_model(model, role))
         result = client.completion(prompt)
         self._record_usage(client)
         return result
 
-    def completion_messages(self, messages: list[dict[str, str]], model: str | None = None) -> str:
+    def completion_messages(
+        self,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        role: str | None = None,
+    ) -> str:
         """Direct (in-process) completion preserving message roles."""
-        client = self.get_client(model)
+        client = self.get_client(self._resolve_model(model, role))
 
         # Check cache
         if self.cache is not None:

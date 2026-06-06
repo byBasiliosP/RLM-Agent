@@ -161,8 +161,9 @@ class SpecialistAgent(ABC):
                         success=False,
                     )
 
-            # Get LLM response
-            llm_response = handler.completion_messages(messages)
+            # Get LLM response — pass the agent's role so the handler
+            # can route cheap roles (e.g. scout) to the cheap client.
+            llm_response = handler.completion_messages(messages, role=self.name)
 
             # Update budget with token usage
             if budget is not None and handler.token_counter is not None:
